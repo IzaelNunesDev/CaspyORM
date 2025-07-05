@@ -15,11 +15,13 @@ def build_insert_cql(schema: Dict[str, Any]) -> str:
     
     return f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
 
-def build_select_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, ordering: Optional[List[str]] = None) -> Tuple[str, List[Any]]:
+def build_select_cql(schema: Dict[str, Any], columns: Optional[List[str]] = None, filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, ordering: Optional[List[str]] = None) -> Tuple[str, List[Any]]:
     """Constrói uma query SELECT ... WHERE ... ORDER BY ... LIMIT com suporte a operadores."""
     table_name = schema['table_name']
     
-    cql = f"SELECT * FROM {table_name}"
+    # Seleciona colunas específicas ou '*'
+    select_clause = ", ".join(columns) if columns else "*"
+    cql = f"SELECT {select_clause} FROM {table_name}"
     params: List[Any] = []
     
     if filters:
@@ -153,6 +155,54 @@ def _get_cql_type(field_type: str) -> str:
     }
     
     return type_mapping.get(field_type, 'text')
+
+def build_count_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = None) -> Tuple[str, List[Any]]:
+    """Constrói uma query SELECT COUNT(*) ... WHERE."""
+    table_name = schema['table_name']
+    
+    cql = f"SELECT COUNT(*) FROM {table_name}"
+    params: List[Any] = []
+    
+    if filters:
+        # Mapeamento de nossos operadores para operadores CQL
+        operator_map = {
+            'exact': '=',
+            'gt': '>',
+            'gte': '>=',
+            'lt': '<',
+            'lte': '<=',
+            'in': 'IN',
+        }
+        
+        where_clauses = []
+        for key, value in filters.items():
+            # Separa o nome do campo e o operador
+            parts = key.split('__')
+            field_name = parts[0]
+            op = parts[1] if len(parts) > 1 else 'exact'
+
+            if op not in operator_map:
+                raise ValueError(f"Operador de filtro não suportado: '{op}'. Operadores válidos: {list(operator_map.keys())}")
+
+            cql_operator = operator_map[op]
+
+            # O operador IN espera uma tupla de placeholders
+            if cql_operator == 'IN':
+                if not isinstance(value, (list, tuple, set)):
+                    raise TypeError(f"O valor para o filtro '__in' deve ser uma lista, tupla ou set, recebido: {type(value)}")
+                placeholders = ', '.join(['?'] * len(value))
+                where_clauses.append(f"{field_name} IN ({placeholders})")
+                params.extend(value)
+            else:
+                where_clauses.append(f"{field_name} {cql_operator} ?")
+                params.append(value)
+        
+        cql += " WHERE " + " AND ".join(where_clauses)
+        cql += " ALLOW FILTERING"  # Necessário para filtros em campos não-PK
+
+    logger.debug(f"Query COUNT gerada: {cql} com parâmetros: {params}")
+    
+    return cql, params
 
 def build_delete_cql(schema: Dict[str, Any], filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
     """Constrói uma query DELETE ... WHERE."""

@@ -125,6 +125,19 @@ class Model(metaclass=ModelMetaclass):
         return instance
 
     @classmethod
+    def bulk_create(cls, instances: List["Model"]) -> List["Model"]:
+        """
+        Insere uma lista de instâncias de modelo em lote usando um UNLOGGED BATCH
+        para máxima performance. As instâncias são modificadas no local.
+        Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
+        """
+        if not instances:
+            return []
+        
+        # Delega a lógica para um método do QuerySet
+        return QuerySet(cls).bulk_create(instances)
+
+    @classmethod
     def get(cls, **kwargs: Any) -> Optional["Model"]:
         """Busca um único registro."""
         # A lógica foi movida para query.py, que usa o QuerySet

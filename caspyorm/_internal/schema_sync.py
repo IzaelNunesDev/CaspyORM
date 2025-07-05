@@ -7,11 +7,9 @@ from ..connection import get_session
 if TYPE_CHECKING:
     from cassandra.cluster import Session
     from ..model import Model
-    from ..exceptions import SchemaError
 else:
     Session = Any
     Model = Any
-    SchemaError = Exception
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +204,59 @@ def build_create_table_cql(table_name: str, schema: Dict[str, Any]) -> str:
     )
     """
 
+def build_create_index_cql(table_name: str, field_name: str) -> str:
+    """Constrói a query CREATE INDEX para um campo."""
+    index_name = f"{table_name}_{field_name}_idx"
+    return f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({field_name});"
+
+def get_existing_indexes(session: Session, keyspace: str, table_name: str) -> set:
+    """Obtém os índices existentes para uma tabela."""
+    try:
+        query = f"""
+            SELECT index_name FROM system_schema.indexes
+            WHERE keyspace_name = '{keyspace}'
+            AND table_name = '{table_name}'
+        """
+        result = session.execute(query)
+        return {row.index_name for row in result}
+    except Exception as e:
+        logger.warning(f"Erro ao obter índices existentes: {e}")
+        return set()
+
+def create_indexes_for_table(session: Session, table_name: str, model_schema: Dict[str, Any], verbose: bool = True) -> None:
+    """Cria os índices necessários para uma tabela."""
+    if not model_schema.get('indexes'):
+        return
+    
+    keyspace = session.keyspace
+    if not keyspace:
+        logger.error("Keyspace não está definido na sessão")
+        return
+    existing_indexes = get_existing_indexes(session, keyspace, table_name)
+    
+    logger.info(f"Criando índices para a tabela '{table_name}'...")
+    
+    for field_name in model_schema['indexes']:
+        index_name = f"{table_name}_{field_name}_idx"
+        
+        if index_name in existing_indexes:
+            if verbose:
+                logger.info(f"  [✓] Índice '{index_name}' já existe")
+            continue
+        
+        create_index_query = build_create_index_cql(table_name, field_name)
+        try:
+            if verbose:
+                logger.info(f"  [+] Executando: {create_index_query}")
+            session.execute(create_index_query)
+            logger.info(f"  [✓] Índice '{index_name}' criado com sucesso")
+        except Exception as e:
+            logger.error(f"  [!] ERRO ao criar índice '{index_name}': {e}")
+            # Não falhar completamente se um índice falhar
+            continue
+    
+    logger.info("Criação de índices concluída.")
+
 def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool = True) -> None:
     """
     Sincroniza o schema do modelo com a tabela no Cassandra.
@@ -225,6 +276,8 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
     
     # Obter schema atual da tabela
     keyspace = session.keyspace
+    if not keyspace:
+        raise RuntimeError("Keyspace não está definido na sessão")
     db_schema = get_cassandra_table_schema(session, keyspace, table_name)
     
     if db_schema is None:
@@ -238,6 +291,10 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
         try:
             session.execute(create_table_query)
             logger.info("Tabela criada com sucesso.")
+            
+            # Criar índices após criar a tabela
+            create_indexes_for_table(session, table_name, model_schema, verbose)
+            
         except Exception as e:
             logger.error(f"Erro ao criar tabela: {e}")
             raise
@@ -297,5 +354,7 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
     # Aplicar mudanças se solicitado
     if auto_apply:
         apply_schema_changes(session, table_name, model_schema, db_schema)
+        # Criar índices após aplicar mudanças
+        create_indexes_for_table(session, table_name, model_schema, verbose)
     else:
         logger.info("\nExecute sync_table(auto_apply=True) para aplicar as mudanças automaticamente.")

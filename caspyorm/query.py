@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional, Type
 from typing_extensions import Self
 from caspyorm.connection import get_session, execute
 from caspyorm._internal import query_builder
+from cassandra.query import BatchStatement, SimpleStatement
+from cassandra import ConsistencyLevel
 import logging
 import warnings
 from typing import TYPE_CHECKING
@@ -52,6 +54,7 @@ class QuerySet:
         """Executa a query no banco de dados e armazena os resultados no cache."""
         cql, params = query_builder.build_select_cql(
             self.model_cls.__caspy_schema__,
+            columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=self._limit,
             ordering=self._ordering  # NOVO: passar ordenação
@@ -114,9 +117,52 @@ class QuerySet:
         return results[0] if results else None
 
     def count(self) -> int:
-        """Executa a query e retorna o número de resultados."""
-        # Simples por enquanto. Uma implementação otimizada usaria `SELECT COUNT(*)`
-        return len(self.all())
+        """
+        Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados.
+        """
+        # Se a query já foi executada, podemos simplesmente retornar o tamanho do cache.
+        if self._result_cache is not None:
+            return len(self._result_cache)
+
+        # Se não, construímos e executamos a query COUNT(*) otimizada.
+        cql, params = query_builder.build_count_cql(
+            self.model_cls.__caspy_schema__,
+            filters=self._filters
+        )
+        
+        session = get_session()
+        prepared = session.prepare(cql)
+        result_set = session.execute(prepared, params)
+        
+        # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
+        row = result_set.one()
+        return row.count if row else 0
+
+    def exists(self) -> bool:
+        """
+        Verifica de forma otimizada se algum registro corresponde aos filtros,
+        executando uma query `SELECT <pk> ... LIMIT 1`. Retorna True se pelo
+        menos um registro for encontrado, False caso contrário.
+        """
+        if self._result_cache is not None:
+            return bool(self._result_cache)
+
+        # Seleciona apenas o primeiro campo da chave primária para máxima eficiência.
+        pk_to_select = [self.model_cls.__caspy_schema__['primary_keys'][0]]
+
+        cql, params = query_builder.build_select_cql(
+            self.model_cls.__caspy_schema__,
+            columns=pk_to_select,
+            filters=self._filters,
+            limit=1
+        )
+        
+        session = get_session()
+        prepared = session.prepare(cql)
+        result_set = session.execute(prepared, params)
+        
+        # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
+        return result_set.one() is not None
 
     def delete(self) -> int:
         """
@@ -154,6 +200,7 @@ class QuerySet:
         """
         cql, params = query_builder.build_select_cql(
             self.model_cls.__caspy_schema__,
+            columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=None,  # Não usar LIMIT para paginação real
             ordering=self._ordering
@@ -168,6 +215,50 @@ class QuerySet:
         resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
+
+    def bulk_create(self, instances: List["Model"]) -> List["Model"]:
+        """
+        Lógica interna para inserir instâncias em lote.
+        """
+        if not instances:
+            return []
+        
+        session = get_session()
+        table_name = self.model_cls.__table_name__
+        
+        # Pega a query de inserção e os nomes das colunas uma única vez
+        data_sample = instances[0].model_dump()
+        columns = list(data_sample.keys())
+        placeholders = ", ".join(['?'] * len(columns))
+        insert_query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        
+        prepared_statement = session.prepare(insert_query)
+        
+        # Usar UNLOGGED BATCH para performance
+        batch = BatchStatement(consistency_level=ConsistencyLevel.QUORUM)
+        
+        for instance in instances:
+            # Validação crucial: garantir que as chaves primárias não são nulas
+            for pk_name in self.model_cls.__caspy_schema__['primary_keys']:
+                if getattr(instance, pk_name, None) is None:
+                    # Alternativamente, poderíamos gerar o UUID aqui se for o caso
+                    raise ValueError(f"Primary key '{pk_name}' não pode ser nula em bulk_create. Instância: {instance}")
+            
+            data = instance.model_dump()
+            params = [data.get(col) for col in columns]  # Garante a ordem correta
+            batch.add(prepared_statement, params)
+            
+            # Limite prático para o tamanho do batch para evitar timeouts
+            if len(batch) >= 100:
+                session.execute(batch)
+                batch.clear()
+
+        # Executa o batch final com os registros restantes
+        if len(batch) > 0:
+            session.execute(batch)
+            
+        logger.info(f"{len(instances)} instâncias inseridas em lote na tabela '{table_name}'.")
+        return instances
 
 # --- Funções do módulo que interagem com o QuerySet ---
 
