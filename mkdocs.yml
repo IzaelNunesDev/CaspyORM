@@ -1,0 +1,116 @@
+site_name: CaspyORM Documentation
+site_description: Documentação completa da biblioteca CaspyORM para Cassandra
+site_author: CaspyORM Team
+site_url: https://caspyorm.readthedocs.io/
+
+repo_name: caspyorm/caspyorm
+repo_url: https://github.com/caspyorm/caspyorm
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: pt
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [caspyorm]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_signature_annotations: true
+            show_bases: true
+            heading_level: 2
+            members_order: source
+            docstring_style: google
+            preload_modules: true
+            filters: ["!^_"]
+            merge_init_into_class: true
+
+nav:
+  - Início: index.md
+  - Guia Rápido: quickstart.md
+  - Modelos:
+    - Definição de Modelos: models/definition.md
+    - Campos: models/fields.md
+    - Validação: models/validation.md
+    - Modelos Dinâmicos: models/dynamic.md
+  - Queries:
+    - QuerySet: queries/queryset.md
+    - Filtros: queries/filters.md
+    - Operações CRUD: queries/crud.md
+  - Operações Assíncronas: async.md
+  - Integração Pydantic: pydantic.md
+  - Performance: performance.md
+  - API Reference:
+    - Model: api/model.md
+    - Fields: api/fields.md
+    - QuerySet: api/queryset.md
+    - Connection: api/connection.md
+  - Exemplos:
+    - Básico: examples/basic.md
+    - Avançado: examples/advanced.md
+    - Modelos Dinâmicos: examples/dynamic.md
+  - Contribuindo: contributing.md
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.smartsymbols
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.extra
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - def_list
+  - footnotes
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/caspyorm/caspyorm
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/caspyorm/
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js 

@@ -75,8 +75,8 @@ class Model(metaclass=ModelMetaclass):
             if getattr(self, pk_name, None) is None:
                 raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
         
-        # TODO: Implementar save_instance_async
-        save_instance(self)
+        from .query import save_instance_async
+        await save_instance_async(self)
         return self
 
     def update(self, **kwargs: Any) -> Self:
@@ -356,3 +356,50 @@ class Model(metaclass=ModelMetaclass):
         """
         # TODO: Implementar update_collection_async
         return self.update_collection(field_name, add, remove)
+
+    @classmethod
+    def create_model(cls, name: str, fields: Dict[str, Any], table_name: Optional[str] = None) -> Type:
+        """
+        Cria dinamicamente um novo modelo CaspyORM.
+        
+        Args:
+            name: Nome da classe do modelo
+            fields: Dicionário com nome do campo -> instância de BaseField
+            table_name: Nome da tabela (opcional, usa name.lower() + 's' por padrão)
+            
+        Returns:
+            Nova classe de modelo dinamicamente criada
+            
+        Example:
+            from caspyorm.fields import Text, Int, UUID
+            
+            UserModel = Model.create_model(
+                name="User",
+                fields={
+                    "id": UUID(primary_key=True),
+                    "name": Text(required=True),
+                    "age": Int(),
+                    "email": Text(index=True)
+                },
+                table_name="users"
+            )
+        """
+        from .fields import BaseField
+        
+        # Validar que todos os campos são instâncias de BaseField
+        for field_name, field_obj in fields.items():
+            if not isinstance(field_obj, BaseField):
+                raise TypeError(f"Campo '{field_name}' deve ser uma instância de BaseField, recebido: {type(field_obj)}")
+        
+        # Criar atributos da classe
+        attrs = {
+            '__table_name__': table_name or f"{name.lower()}s",
+            '__caspy_schema__': None,  # Será preenchido pela metaclasse
+            'model_fields': fields,
+        }
+        
+        # Criar a classe usando a metaclasse ModelMetaclass
+        from ._internal.model_construction import ModelMetaclass
+        new_model_class = ModelMetaclass(name, (cls,), attrs)
+        
+        return new_model_class

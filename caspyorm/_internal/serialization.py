@@ -14,16 +14,29 @@ logger = logging.getLogger(__name__)
 
 # Lidar com a importação opcional do Pydantic
 try:
+    import pydantic
     from pydantic import BaseModel, create_model, Field
-    PYDANTIC_V2 = True
-    # O Pydantic V2 usa ConfigDict, enquanto o V1 usava uma classe Config.
-    # Vamos focar na V2 por ser mais moderna.
+    
+    # Detectar versão do Pydantic
+    PYDANTIC_V2 = pydantic.VERSION.startswith('2')
+    
+    if PYDANTIC_V2:
+        # Pydantic v2 imports
+        from pydantic import ConfigDict
+        from pydantic.fields import FieldInfo
+    else:
+        # Pydantic v1 imports
+        ConfigDict = None
+        FieldInfo = None
+        
 except ImportError:
     PYDANTIC_V2 = False
     # Definir stubs para evitar erros se pydantic não estiver instalado
     class BaseModel: pass
     def create_model(*args, **kwargs): return None
     def Field(*args, **kwargs): pass
+    ConfigDict = None
+    FieldInfo = None
 
 class CaspyJSONEncoder(json.JSONEncoder):
     """Encoder JSON customizado para tipos da CaspyORM."""
@@ -55,9 +68,10 @@ def generate_pydantic_model(
     model_cls: Type["Model"], 
     name: Optional[str] = None, 
     exclude: Optional[List[str]] = None
-) -> Type[BaseModel]:
+) -> Type:
     """
     Gera dinamicamente um modelo Pydantic a partir de um modelo CaspyORM.
+    Suporta tanto Pydantic v1 quanto v2.
     """
     if not PYDANTIC_V2:
         raise ImportError("A funcionalidade de integração com Pydantic requer que o pacote 'pydantic' seja instalado.")
@@ -77,18 +91,42 @@ def generate_pydantic_model(
         except (ImportError, TypeError) as e:
             logger.warning(f"Não foi possível obter o tipo Pydantic para o campo '{field_name}'. Erro: {e}")
             continue
-            
-        if field_obj.required:
-            pydantic_fields[field_name] = (python_type, ...)
-        elif field_obj.default is not None:
-            pydantic_fields[field_name] = (python_type, field_obj.default)
+        
+        # Configurar campo baseado na versão do Pydantic
+        if PYDANTIC_V2:
+            # Pydantic v2: usar Field() para configurações
+            if field_obj.required:
+                pydantic_fields[field_name] = (python_type, Field())
+            elif field_obj.default is not None:
+                pydantic_fields[field_name] = (python_type, Field(default=field_obj.default))
+            else:
+                # Campo opcional sem default
+                from typing import Optional as OptionalType
+                pydantic_fields[field_name] = (OptionalType[python_type], Field(default=None))
         else:
-            # Campo opcional sem default
-            from typing import Optional as OptionalType
-            pydantic_fields[field_name] = (OptionalType[python_type], None)
+            # Pydantic v1: usar sintaxe antiga
+            if field_obj.required:
+                pydantic_fields[field_name] = (python_type, ...)
+            elif field_obj.default is not None:
+                pydantic_fields[field_name] = (python_type, field_obj.default)
+            else:
+                # Campo opcional sem default
+                from typing import Optional as OptionalType
+                pydantic_fields[field_name] = (OptionalType[python_type], None)
 
     model_name = name or f"{model_cls.__name__}Pydantic"
-    pydantic_model = create_model(model_name, **pydantic_fields)
+    
+    # Criar modelo com configurações específicas da versão
+    if PYDANTIC_V2:
+        # Pydantic v2: usar ConfigDict
+        pydantic_model = create_model(
+            model_name, 
+            __base__=BaseModel,
+            **pydantic_fields
+        )
+    else:
+        # Pydantic v1: sintaxe padrão
+        pydantic_model = create_model(model_name, **pydantic_fields)
     
     if pydantic_model is None:
         raise RuntimeError("Falha ao criar modelo Pydantic")

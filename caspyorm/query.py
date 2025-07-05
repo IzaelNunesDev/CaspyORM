@@ -427,6 +427,33 @@ def save_instance(instance) -> None:
         logger.error(f"Erro ao salvar instância: {e}")
         raise
 
+async def save_instance_async(instance) -> None:
+    """Salva (insere ou atualiza) a instância no Cassandra (assíncrono)."""
+    if not get_async_session():
+        raise RuntimeError("Não há conexão assíncrona ativa com o Cassandra")
+    
+    table_name = instance.__class__.__table_name__
+    data = instance.model_dump()
+    
+    # Construir query INSERT com placeholders parametrizados
+    columns = list(data.keys())
+    placeholders = ", ".join(['?'] * len(columns))
+    
+    insert_query = f"""
+        INSERT INTO {table_name} ({', '.join(columns)})
+        VALUES ({placeholders})
+    """
+    
+    # Preparar e executar com parâmetros de forma assíncrona
+    try:
+        session = get_async_session()
+        prepared = session.prepare(insert_query)
+        session.execute_async(prepared, list(data.values())).result()
+        logger.info(f"Instância salva na tabela '{table_name}' (ASSÍNCRONO)")
+    except Exception as e:
+        logger.error(f"Erro ao salvar instância (async): {e}")
+        raise
+
 def get_one(model_cls: Type["Model"], **kwargs: Any) -> Optional["Model"]:
     """Busca um único registro usando um QuerySet."""
     return QuerySet(model_cls).filter(**kwargs).first()

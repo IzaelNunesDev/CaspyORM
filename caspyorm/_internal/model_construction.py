@@ -14,21 +14,27 @@ class ModelMetaclass(type):
 
         # Extrai os campos declarados na classe
         model_fields: Dict[str, BaseField] = {}
-        for key, value in attrs.items():
-            if isinstance(value, BaseField):
-                model_fields[key] = value
+        
+        # Se model_fields já foi definido (criação dinâmica), use-o
+        if 'model_fields' in attrs:
+            model_fields = attrs['model_fields']
+        else:
+            # Processamento normal para definição estática
+            for key, value in attrs.items():
+                if isinstance(value, BaseField):
+                    model_fields[key] = value
 
-        # Remove os campos dos atributos da classe para que não sejam atributos de classe
-        for key in model_fields:
-            del attrs[key]
+            # Remove os campos dos atributos da classe para que não sejam atributos de classe
+            for key in model_fields:
+                del attrs[key]
 
-        # Processa as anotações de tipo (e.g., nome: fields.Text())
-        annotations = attrs.get('__annotations__', {})
-        for key, field_type in annotations.items():
-             if isinstance(field_type, BaseField):
-                 model_fields[key] = field_type
-                 # Opcional: remover a anotação para limpar o namespace da classe final
-                 # del attrs['__annotations__'][key]
+            # Processa as anotações de tipo (e.g., nome: fields.Text())
+            annotations = attrs.get('__annotations__', {})
+            for key, field_type in annotations.items():
+                 if isinstance(field_type, BaseField):
+                     model_fields[key] = field_type
+                     # Opcional: remover a anotação para limpar o namespace da classe final
+                     # del attrs['__annotations__'][key]
 
         if not model_fields:
             raise TypeError(f'O modelo "{name}" não definiu nenhum campo.')
