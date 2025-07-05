@@ -1,6 +1,7 @@
 # caspyorm/fields.py # caspyorm/fields.py
 
 import uuid
+from datetime import datetime
 from typing import Any, Type
 
 class BaseField:
@@ -114,7 +115,41 @@ class Boolean(BaseField):
 
 class Timestamp(BaseField):
     cql_type = 'timestamp'
-    python_type = str  # Usamos string para evitar importação circular aqui
+    python_type = datetime  # Usamos datetime para timestamp
+
+    def to_python(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value / 1000 if value > 1e12 else value)
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except Exception:
+                pass
+            try:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M:%S.%f")
+            except Exception:
+                pass
+            try:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+            raise TypeError(f"Não foi possível converter string '{value}' para datetime")
+        raise TypeError(f"Não foi possível converter {value!r} para datetime")
+
+    def to_cql(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value / 1000 if value > 1e12 else value)
+        if isinstance(value, str):
+            return self.to_python(value)
+        raise TypeError(f"Não foi possível converter {value!r} para datetime")
 
 class List(BaseField):
     """
