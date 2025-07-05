@@ -39,7 +39,13 @@ def cassandra_session():
         except:
             pass  # Ignora erros de desconexão
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def session(cassandra_session):
-    """Fixture que fornece a sessão do Cassandra para cada teste."""
-    return cassandra_session 
+    """
+    Fixture de escopo de FUNÇÃO. Fornece a sessão para cada teste,
+    garantindo que é uma referência válida mesmo após reconexões.
+    """
+    # A fixture cassandra_session garante que a conexão existe.
+    # Esta fixture apenas passa a referência. Como agora é function-scoped,
+    # ela reavalia `connection.get_session()` para cada teste.
+    return connection.get_session() 

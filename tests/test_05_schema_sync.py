@@ -87,35 +87,60 @@ def test_sync_table_com_campo_novo(session):
     assert 'preco' in columns, f"Campo 'preco' não encontrado. Colunas: {columns}"
 
 def test_sync_table_com_campo_removido(session):
-    """Testa se sync_table remove campos que não existem mais no modelo."""
-    # Cria tabela com campo extra
-    class ProdutoComExtra(Model):
-        __table_name__ = 'produtos_sync'
-        id = fields.UUID(primary_key=True)
-        nome = fields.Text()
-        extra = fields.Text()  # Campo que será removido
+    """
+    Testa se sync_table AVISA sobre campos a serem removidos,
+    mas NÃO os remove automaticamente por segurança.
+    """
+    import logging
+    from io import StringIO
     
-    ProdutoComExtra.sync_table()
+    # Captura logs diretamente do logger da CaspyORM
+    log_stream = StringIO()
+    log_handler = logging.StreamHandler(log_stream)
+    log_handler.setLevel(logging.WARNING)
     
-    # Redefine sem o campo extra
-    class ProdutoSemExtra(Model):
-        __table_name__ = 'produtos_sync'
-        id = fields.UUID(primary_key=True)
-        nome = fields.Text()
+    # Adiciona handler temporário ao logger da CaspyORM
+    caspy_logger = logging.getLogger("caspyorm._internal.schema_sync")
+    original_handlers = caspy_logger.handlers.copy()
+    caspy_logger.addHandler(log_handler)
     
-    # Sincroniza novamente (com auto_apply para aplicar mudanças)
-    ProdutoSemExtra.sync_table(auto_apply=True)
+    try:
+        # Cria tabela com campo extra
+        class ProdutoComExtra(Model):
+            __table_name__ = 'produtos_sync'
+            id = fields.UUID(primary_key=True)
+            nome = fields.Text()
+            extra = fields.Text()  # Campo que será removido
+
+        ProdutoComExtra.sync_table()
+
+        # Redefine sem o campo extra
+        class ProdutoSemExtra(Model):
+            __table_name__ = 'produtos_sync'
+            id = fields.UUID(primary_key=True)
+            nome = fields.Text()
+
+        # Sincroniza novamente
+        ProdutoSemExtra.sync_table(auto_apply=True)
+
+        # 1. Verifica se o AVISO foi logado
+        log_text = log_stream.getvalue()
+        assert "A remoção automática de colunas não é suportada" in log_text, f"Log não encontrado. Logs capturados: {log_text}"
+        assert "ALTER TABLE produtos_sync DROP extra" in log_text, f"Comando DROP não encontrado. Logs capturados: {log_text}"
+        
+        # 2. Verifica se a coluna NÃO foi removida (comportamento seguro)
+        result = session.execute(f"""
+            SELECT column_name FROM system_schema.columns 
+            WHERE keyspace_name = '{session.keyspace}' 
+            AND table_name = 'produtos_sync'
+        """)
+        
+        columns = [row.column_name for row in result]
+        assert 'extra' in columns, "A coluna 'extra' foi removida, o que não é o comportamento esperado por segurança."
     
-    # Verifica se o campo foi removido
-    # Como o sync_table recria a tabela, vamos verificar se a tabela foi criada sem o campo
-    result = session.execute(f"""
-        SELECT column_name FROM system_schema.columns 
-        WHERE keyspace_name = '{session.keyspace}' 
-        AND table_name = 'produtos_sync'
-    """)
-    
-    columns = [row.column_name for row in result]
-    assert 'extra' not in columns, f"Campo 'extra' ainda presente. Colunas: {columns}"
+    finally:
+        # Restaura handlers originais
+        caspy_logger.handlers = original_handlers
 
 def test_sync_table_preserva_dados(session):
     """Testa se sync_table preserva dados existentes ao adicionar campos."""

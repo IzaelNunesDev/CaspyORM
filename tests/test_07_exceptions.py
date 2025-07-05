@@ -250,8 +250,8 @@ def test_excecao_delete_sem_primary_key(session):
     
     usuario = Usuario(id=uuid.uuid4(), nome="João") # Não salva, apenas instancia
     
-    # Simula uma PK nula
-    usuario.id = None
+    # Simula uma PK nula usando setattr para contornar a tipagem
+    setattr(usuario, 'id', None)
     
     # A validação agora está em `delete()`
     with pytest.raises(ValidationError, match="Primary key 'id' is required to delete, but was None."):
@@ -301,7 +301,7 @@ def test_excecao_acesso_campo_inexistente(session):
     usuario = Usuario.create(id=uuid.uuid4(), nome="João")
     
     with pytest.raises(AttributeError):
-        _ = usuario.campo_inexistente
+        _ = getattr(usuario, 'campo_inexistente')
 
 def test_excecao_atribuicao_campo_inexistente(session):
     """Testa se exceção é levantada quando tentamos atribuir a campo inexistente."""
@@ -314,8 +314,8 @@ def test_excecao_atribuicao_campo_inexistente(session):
     usuario = Usuario.create(id=uuid.uuid4(), nome="João")
     
     # Atribuição a campo inexistente deve funcionar (comportamento atual)
-    usuario.campo_inexistente = "valor"
-    assert usuario.campo_inexistente == "valor"
+    setattr(usuario, 'campo_inexistente', "valor")
+    assert getattr(usuario, 'campo_inexistente') == "valor"
 
 def test_excecao_primary_key_none(session):
     """Testa se exceção é levantada quando primary key é None no create."""

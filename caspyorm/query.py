@@ -165,7 +165,7 @@ class QuerySet:
         if paging_state is not None:
             statement.paging_state = paging_state
         result_set = session.execute(statement)
-        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set.current_rows]
+        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
 

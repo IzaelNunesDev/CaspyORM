@@ -3,6 +3,7 @@ Testes para as melhorias do Nível 2 da CaspyORM: Paginação eficiente.
 """
 import pytest
 import uuid
+import time
 from caspyorm import Model, fields
 from caspyorm import connection
 
@@ -15,20 +16,25 @@ class UsuarioPaginacao(Model):
 
 @pytest.fixture(scope="function")
 def setup_usuarios(session):
-    # Drop da tabela para garantir schema correto
+    # Drop da tabela para garantir schema correto e limpo
     try:
         connection.execute("DROP TABLE IF EXISTS usuarios_paginacao_teste")
     except Exception:
         pass
+    
     UsuarioPaginacao.sync_table()
-    # Limpar tabela antes do teste
-    for usuario in UsuarioPaginacao.filter(grupo="A"):
-        usuario.delete()
+    
+    # Adicionar uma pausa para o schema se estabilizar
+    time.sleep(1.5)
+
+    # O loop de deleção anterior era redundante, já que a tabela foi dropada.
+    
     # Criar 25 usuários no grupo 'A'
     usuarios = []
     for i in range(25):
         usuario = UsuarioPaginacao.create(
             grupo="A",
+            id=uuid.uuid4(), # É importante passar o ID aqui, pois a PK é composta
             nome=f"Usuário {i}",
             email=f"usuario{i}@teste.com"
         )
@@ -40,9 +46,11 @@ def test_paginacao_page_method(session, setup_usuarios):
     queryset = UsuarioPaginacao.filter(grupo="A")
     nomes = set()
     paging_state = None
+    
     while True:
         resultados, paging_state = queryset.page(page_size=page_size, paging_state=paging_state)
         nomes.update(u.nome for u in resultados)
         if not paging_state:
             break
+    
     assert len(nomes) == 25
