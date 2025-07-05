@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caspyorm"
+version = "0.1.0"
+authors = [
+  { name="Seu Nome", email="seu@email.com" },
+]
+description = "Um ORM moderno e Pythonic para Apache Cassandra, inspirado no Pydantic e focado em produtividade."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file="LICENSE" }
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+  "cassandra-driver>=3.28.0",
+]
+
+[project.optional-dependencies]
+pydantic = ["pydantic>=2.0"]
+csv = ["pandas>=1.0"]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "caspyorm[pydantic,csv]",
+]
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -v"
+testpaths = [
+    "tests",
+]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+pretty = true 
