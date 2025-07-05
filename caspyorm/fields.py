@@ -77,6 +77,12 @@ class Text(BaseField):
 class UUID(BaseField):
     cql_type = 'uuid'
     python_type = uuid.UUID
+    
+    def __init__(self, **kwargs):
+        # Se for chave primária e não tiver default, gerar UUID automaticamente
+        if kwargs.get('primary_key', False) and 'default' not in kwargs:
+            kwargs['default'] = lambda: uuid.uuid4()
+        super().__init__(**kwargs)
 
 class Integer(BaseField):
     cql_type = 'int'

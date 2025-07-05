@@ -172,3 +172,41 @@ def build_delete_cql(schema: Dict[str, Any], filters: Dict[str, Any]) -> Tuple[s
     params = list(filters.values())
     cql = f"DELETE FROM {table_name} WHERE {where_clauses}"
     return cql, params
+
+def build_update_cql(schema: Dict[str, Any], update_data: Dict[str, Any], pk_filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
+    """
+    Constrói uma query UPDATE ... SET ... WHERE.
+    
+    Args:
+        schema: Schema do modelo
+        update_data: Dicionário com campos e valores para atualizar
+        pk_filters: Dicionário com filtros de chave primária para WHERE
+        
+    Returns:
+        Tupla (cql, params) com a query e parâmetros
+    """
+    table_name = schema['table_name']
+    
+    if not update_data:
+        raise ValueError("Nenhum campo fornecido para atualização")
+    
+    if not pk_filters:
+        raise ValueError("Filtros de chave primária são obrigatórios para UPDATE")
+    
+    # Construir cláusula SET
+    set_clauses = [f"{field} = ?" for field in update_data.keys()]
+    set_clause = ", ".join(set_clauses)
+    
+    # Construir cláusula WHERE
+    where_clauses = [f"{field} = ?" for field in pk_filters.keys()]
+    where_clause = " AND ".join(where_clauses)
+    
+    # Construir query completa
+    cql = f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}"
+    
+    # Parâmetros: primeiro os valores do SET, depois os filtros do WHERE
+    params = list(update_data.values()) + list(pk_filters.values())
+    
+    logger.debug(f"Query UPDATE gerada: {cql} com parâmetros: {params}")
+    
+    return cql, params

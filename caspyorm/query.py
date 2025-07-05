@@ -142,6 +142,32 @@ class QuerySet:
         session.execute(prepared, params)
         return 0  # Cassandra não retorna número de linhas deletadas
 
+    def page(self, page_size: int = 100, paging_state: Any = None):
+        """
+        Retorna uma página de resultados e o paging_state para a próxima página.
+        Args:
+            page_size: Tamanho da página (quantidade de registros)
+            paging_state: Estado de paginação retornado pela página anterior (ou None para a primeira página)
+        Returns:
+            (resultados: List[Model], next_paging_state: Any)
+        """
+        cql, params = query_builder.build_select_cql(
+            self.model_cls.__caspy_schema__,
+            filters=self._filters,
+            limit=None,  # Não usar LIMIT para paginação real
+            ordering=self._ordering
+        )
+        session = get_session()
+        prepared = session.prepare(cql)
+        statement = prepared.bind(params)
+        statement.fetch_size = page_size
+        if paging_state is not None:
+            statement.paging_state = paging_state
+        result_set = session.execute(statement)
+        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set.current_rows]
+        next_paging_state = result_set.paging_state
+        return resultados, next_paging_state
+
 # --- Funções do módulo que interagem com o QuerySet ---
 
 def save_instance(instance) -> None:

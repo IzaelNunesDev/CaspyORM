@@ -64,6 +64,56 @@ class Model(metaclass=ModelMetaclass):
         save_instance(self)
         return self
 
+    def update(self, **kwargs: Any) -> Self:
+        """
+        Atualiza parcialmente esta instância no banco de dados.
+        Diferente de save(), que faz um upsert completo, update() gera
+        uma query UPDATE específica apenas para os campos fornecidos.
+        """
+        if not kwargs:
+            logger.warning("update() chamado sem campos para atualizar")
+            return self
+        
+        # Validar e converter os valores
+        validated_data = {}
+        for key, value in kwargs.items():
+            if key not in self.model_fields:
+                raise ValidationError(f"Campo '{key}' não existe no modelo {self.__class__.__name__}")
+            
+            field_obj = self.model_fields[key]
+            if value is not None:
+                try:
+                    validated_value = field_obj.to_python(value)
+                    validated_data[key] = validated_value
+                    # Atualizar o atributo da instância
+                    setattr(self, key, validated_value)
+                except (TypeError, ValueError) as e:
+                    raise ValidationError(f"Valor inválido para campo '{key}': {e}")
+        
+        if not validated_data:
+            logger.warning("Nenhum campo válido fornecido para update()")
+            return self
+        
+        # Gerar e executar query UPDATE
+        from ._internal.query_builder import build_update_cql
+        cql, params = build_update_cql(
+            self.__caspy_schema__,
+            update_data=validated_data,
+            pk_filters={pk: getattr(self, pk) for pk in self.__caspy_schema__['primary_keys']}
+        )
+        
+        try:
+            from .connection import get_session
+            session = get_session()
+            prepared = session.prepare(cql)
+            session.execute(prepared, params)
+            logger.info(f"Instância atualizada: {self.__class__.__name__} com campos: {list(validated_data.keys())}")
+        except Exception as e:
+            logger.error(f"Erro ao atualizar instância: {e}")
+            raise
+        
+        return self
+
     @classmethod
     def create(cls, **kwargs: Any) -> Self:
         instance = cls(**kwargs)

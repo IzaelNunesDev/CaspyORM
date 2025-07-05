@@ -1,10 +1,14 @@
 # main_api.py
 
 import uuid
+import logging
 from typing import List, Optional, Any
 from fastapi import FastAPI, HTTPException
 
 from caspyorm import fields, Model, connection
+
+# Configurar logging
+logger = logging.getLogger("caspyorm.api")
 
 # --- Configuração da CaspyORM ---
 connection.connect(contact_points=['127.0.0.1'], keyspace='caspyorm_api_test')
@@ -85,7 +89,7 @@ def root():
 
 if __name__ == "__main__":
     import uvicorn
-    print("Para iniciar a API, execute: uvicorn main_api:app --reload")
-    print("Documentação disponível em: http://127.0.0.1:8000/docs")
+    logger.info("Para iniciar a API, execute: uvicorn main_api:app --reload")
+    logger.info("Documentação disponível em: http://127.0.0.1:8000/docs")
 else:
-    print("Para iniciar a API, execute: uvicorn main_api:app --reload") 
+    logger.info("Para iniciar a API, execute: uvicorn main_api:app --reload") 
