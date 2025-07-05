@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional, Type
 from typing_extensions import Self
 from caspyorm.connection import get_session, execute
 from caspyorm._internal import query_builder
-from .results import _map_row_to_instance
 import logging
 import warnings
 from typing import TYPE_CHECKING
@@ -12,6 +11,10 @@ if TYPE_CHECKING:
     from .model import Model
 
 logger = logging.getLogger(__name__)
+
+def _map_row_to_instance(model_cls, row_dict):
+    """Mapeia um dicionário (linha do DB) para uma instância do modelo."""
+    return model_cls(**row_dict)
 
 class QuerySet:
     """

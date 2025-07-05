@@ -30,6 +30,14 @@ class Model(metaclass=ModelMetaclass):
             # Validação de campo required
             if value is None and field_obj.required:
                 raise ValidationError(f"Campo '{key}' é obrigatório e não foi fornecido.")
+            # Inicialização de coleções vazias
+            if value is None and hasattr(field_obj, 'python_type') and field_obj.python_type in (list, set, dict):
+                if field_obj.python_type is list:
+                    value = []
+                elif field_obj.python_type is set:
+                    value = set()
+                elif field_obj.python_type is dict:
+                    value = {}
             # Validação de tipo para coleções
             if hasattr(field_obj, 'python_type') and field_obj.python_type in (list, set, dict) and value is not None:
                 try:
