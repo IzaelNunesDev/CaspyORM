@@ -35,7 +35,7 @@ def setup_usuarios(session):
         usuarios.append(usuario)
     return usuarios
 
-def test_paginacao_page_method(setup_usuarios):
+def test_paginacao_page_method(session, setup_usuarios):
     page_size = 10
     queryset = UsuarioPaginacao.filter(grupo="A")
     nomes = set()
@@ -45,4 +45,4 @@ def test_paginacao_page_method(setup_usuarios):
         nomes.update(u.nome for u in resultados)
         if not paging_state:
             break
-    assert len(nomes) == 25 
+    assert len(nomes) == 25

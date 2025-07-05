@@ -17,7 +17,7 @@ def cassandra_disponivel():
     except Exception:
         return False
 
-def test_excecao_campo_obrigatorio():
+def test_excecao_campo_obrigatorio(session):
     """Testa se exceção é levantada quando campo obrigatório não é fornecido."""
     class Usuario(Model):
         __table_name__ = 'usuarios_exceptions'
@@ -27,7 +27,7 @@ def test_excecao_campo_obrigatorio():
     with pytest.raises(ValidationError, match="Campo 'nome' é obrigatório"):
         Usuario.create(id=uuid.uuid4())
 
-def test_excecao_tipo_invalido():
+def test_excecao_tipo_invalido(session):
     """Testa se exceção é levantada quando tipo de dado é inválido."""
     class Produto(Model):
         __table_name__ = 'produtos_exceptions'
@@ -52,7 +52,7 @@ def test_excecao_conexao_nao_estabelecida():
     with pytest.raises(RuntimeError, match=r"[cC]onexão com o Cassandra não foi estabelecida"):
         Teste.create(id=uuid.uuid4())
 
-def test_excecao_operador_invalido():
+def test_excecao_operador_invalido(session):
     """Testa se exceção é levantada quando operador de filtro é inválido."""
     class Artigo(Model):
         __table_name__ = 'artigos_exceptions'
@@ -69,7 +69,7 @@ def test_excecao_operador_invalido():
     with pytest.warns(UserWarning, match="não é uma chave primária nem está indexado"):
         list(Artigo.filter(titulo__invalid_op="valor"))
 
-def test_excecao_campo_nao_indexado():
+def test_excecao_campo_nao_indexado(session):
     """Testa se exceção é levantada quando filtro é aplicado em campo não indexado."""
     class Evento(Model):
         __table_name__ = 'eventos_exceptions'
@@ -87,7 +87,7 @@ def test_excecao_campo_nao_indexado():
     with pytest.warns(UserWarning, match="não é uma chave primária nem está indexado"):
         list(Evento.filter(descricao="alguma descrição"))
 
-def test_excecao_primary_key_obrigatoria():
+def test_excecao_primary_key_obrigatoria(session):
     """Testa se exceção é levantada quando primary key não é fornecida."""
     class Item(Model):
         __table_name__ = 'itens_exceptions'
@@ -100,7 +100,7 @@ def test_excecao_primary_key_obrigatoria():
     with pytest.raises(ValidationError, match="Primary key 'id' é obrigatória"):
         Item.create(nome="Item sem ID")
 
-def test_excecao_colecao_tipo_invalido():
+def test_excecao_colecao_tipo_invalido(session):
     """Testa se exceção é levantada quando coleção contém tipos inválidos."""
     class Documento(Model):
         __table_name__ = 'documentos_exceptions'
@@ -110,7 +110,7 @@ def test_excecao_colecao_tipo_invalido():
     with pytest.raises(TypeError, match="Não foi possível converter item"):
         Documento.create(id=uuid.uuid4(), tags=["tag1", 123, "tag2"])
 
-def test_excecao_map_chave_invalida():
+def test_excecao_map_chave_invalida(session):
     """Testa se exceção é levantada quando chave do map é inválida."""
     class Configuracao(Model):
         __table_name__ = 'configuracoes_exceptions'
@@ -120,7 +120,7 @@ def test_excecao_map_chave_invalida():
     with pytest.raises(TypeError, match="Não foi possível converter chave"):
         Configuracao.create(id=uuid.uuid4(), settings={123: "valor"})
 
-def test_excecao_map_valor_invalido():
+def test_excecao_map_valor_invalido(session):
     """Testa se exceção é levantada quando valor do map é inválido."""
     class Configuracao(Model):
         __table_name__ = 'configuracoes_exceptions'
@@ -156,7 +156,7 @@ def test_excecao_sync_table_sem_conexao():
     with pytest.raises(RuntimeError, match=r"[cC]onexão com o Cassandra não foi estabelecida"):
         TesteSync.sync_table()
 
-def test_excecao_uuid_invalido():
+def test_excecao_uuid_invalido(session):
     """Testa se exceção é levantada quando UUID é inválido."""
     class Usuario(Model):
         __table_name__ = 'usuarios_uuid_exceptions'
@@ -166,7 +166,7 @@ def test_excecao_uuid_invalido():
     with pytest.raises(TypeError, match="Não foi possível converter"):
         Usuario.create(id="não é um uuid válido", nome="João")
 
-def test_excecao_boolean_invalido():
+def test_excecao_boolean_invalido(session):
     """Testa se exceção é levantada quando boolean é inválido."""
     class Config(Model):
         __table_name__ = 'config_boolean_exceptions'
@@ -176,7 +176,7 @@ def test_excecao_boolean_invalido():
     with pytest.raises(TypeError, match="Não foi possível converter"):
         Config.create(id=uuid.uuid4(), ativo="não é boolean")
 
-def test_excecao_float_invalido():
+def test_excecao_float_invalido(session):
     """Testa se exceção é levantada quando float é inválido."""
     class Produto(Model):
         __table_name__ = 'produtos_float_exceptions'
@@ -186,7 +186,7 @@ def test_excecao_float_invalido():
     with pytest.raises(TypeError, match="Não foi possível converter"):
         Produto.create(id=uuid.uuid4(), preco="não é número")
 
-def test_excecao_set_tipo_invalido():
+def test_excecao_set_tipo_invalido(session):
     """Testa se exceção é levantada quando set contém tipos inválidos."""
     class Usuario(Model):
         __table_name__ = 'usuarios_set_exceptions'
@@ -196,7 +196,7 @@ def test_excecao_set_tipo_invalido():
     with pytest.raises(TypeError, match="Não foi possível converter item"):
         Usuario.create(id=uuid.uuid4(), permissoes={"admin", 123, "user"})
 
-def test_excecao_atualizar_campo_inexistente():
+def test_excecao_atualizar_campo_inexistente(session):
     """Testa se exceção é levantada quando tentamos atualizar campo inexistente."""
     class Usuario(Model):
         __table_name__ = 'usuarios_update_exceptions'
@@ -211,7 +211,7 @@ def test_excecao_atualizar_campo_inexistente():
     with pytest.raises(ValidationError, match="Campo 'campo_inexistente' não existe"):
         usuario.update(campo_inexistente="valor")
 
-def test_excecao_delete_sem_primary_key():
+def test_excecao_delete_sem_primary_key(session):
     """Testa se exceção é levantada quando tentamos deletar sem primary key."""
     class Usuario(Model):
         __table_name__ = 'usuarios_delete_exceptions'
@@ -229,7 +229,7 @@ def test_excecao_delete_sem_primary_key():
     with pytest.raises(ValidationError, match="Primary key é obrigatória para deletar"):
         usuario.delete()
 
-def test_excecao_filtro_sem_operador():
+def test_excecao_filtro_sem_operador(session):
     """Testa se exceção é levantada quando filtro não tem operador válido."""
     class Usuario(Model):
         __table_name__ = 'usuarios_filter_exceptions'
@@ -246,7 +246,7 @@ def test_excecao_filtro_sem_operador():
     usuarios = list(Usuario.filter(nome="João"))
     assert len(usuarios) == 1
 
-def test_excecao_campo_inexistente_no_create():
+def test_excecao_campo_inexistente_no_create(session):
     """Testa se campos inexistentes são ignorados no create (comportamento atual)."""
     class Usuario(Model):
         __table_name__ = 'usuarios_ignore_exceptions'
@@ -261,7 +261,7 @@ def test_excecao_campo_inexistente_no_create():
     assert usuario.nome == "João"
     assert not hasattr(usuario, 'campo_inexistente')
 
-def test_excecao_acesso_campo_inexistente():
+def test_excecao_acesso_campo_inexistente(session):
     """Testa se exceção é levantada quando tentamos acessar campo que não existe."""
     class Usuario(Model):
         __table_name__ = 'usuarios_access_exceptions'
@@ -273,7 +273,7 @@ def test_excecao_acesso_campo_inexistente():
     with pytest.raises(AttributeError):
         _ = usuario.campo_inexistente
 
-def test_excecao_atribuicao_campo_inexistente():
+def test_excecao_atribuicao_campo_inexistente(session):
     """Testa se exceção é levantada quando tentamos atribuir a campo inexistente."""
     class Usuario(Model):
         __table_name__ = 'usuarios_assign_exceptions'
@@ -286,7 +286,7 @@ def test_excecao_atribuicao_campo_inexistente():
     usuario.campo_inexistente = "valor"
     assert usuario.campo_inexistente == "valor"
 
-def test_excecao_primary_key_none():
+def test_excecao_primary_key_none(session):
     """Testa se exceção é levantada quando primary key é None."""
     class Usuario(Model):
         __table_name__ = 'usuarios_pk_none_exceptions'
@@ -299,7 +299,7 @@ def test_excecao_primary_key_none():
     with pytest.raises(ValidationError, match="Primary key 'id' é obrigatória"):
         Usuario.create(id=None, nome="João")
 
-def test_excecao_campo_required_none():
+def test_excecao_campo_required_none(session):
     """Testa se exceção é levantada quando campo required é None."""
     class Usuario(Model):
         __table_name__ = 'usuarios_required_none_exceptions'
@@ -307,4 +307,4 @@ def test_excecao_campo_required_none():
         nome = fields.Text(required=True)
     
     with pytest.raises(ValidationError, match="Campo 'nome' é obrigatório"):
-        Usuario.create(id=uuid.uuid4(), nome=None) 
+        Usuario.create(id=uuid.uuid4(), nome=None)

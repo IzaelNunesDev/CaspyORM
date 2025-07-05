@@ -4,8 +4,8 @@ from caspyorm import fields, Model
 
 class Funcionario(Model):
     __table_name__ = "funcionarios_qs"
-    id = fields.UUID(primary_key=True)
-    setor = fields.Text(partition_key=True)
+    id = fields.UUID()
+    setor = fields.Text(primary_key=True)
     salario = fields.Integer(clustering_key=True) # Importante para ordenação
     nome = fields.Text()
 
@@ -77,7 +77,7 @@ def test_first(session):
     Funcionario.create(setor="Teste", salario=1000, nome="Primeiro", id=uuid.uuid4())
     Funcionario.create(setor="Teste", salario=2000, nome="Segundo", id=uuid.uuid4())
     
-    primeiro = Funcionario.filter(setor="Teste").first()
+    primeiro = Funcionario.filter(setor="Teste", salario=1000).first()
     assert primeiro is not None
     assert primeiro.nome == "Primeiro"
 
@@ -89,4 +89,4 @@ def test_count(session):
         Funcionario.create(setor="Contagem", salario=1000+i, nome=f"Func{i}", id=uuid.uuid4())
     
     count = Funcionario.filter(setor="Contagem").count()
-    assert count == 3 
+    assert count == 3

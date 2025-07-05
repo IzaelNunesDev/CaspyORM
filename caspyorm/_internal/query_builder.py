@@ -80,9 +80,8 @@ def build_select_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] =
         params.append(limit)
 
     # Adicionar ALLOW FILTERING para flexibilidade
-    if filters and not all(k.split('__')[0] in schema['primary_keys'] for k in filters.keys()):
-        if "ALLOW FILTERING" not in cql:
-            cql += " ALLOW FILTERING"
+    if filters:
+        cql += " ALLOW FILTERING"
             
     return cql, params
 

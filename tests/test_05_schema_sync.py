@@ -10,9 +10,9 @@ class ProdutoOriginal(Model):
 @pytest.fixture(autouse=True)
 def limpar_tabela(session):
     """Limpa a tabela antes de cada teste."""
-    session.execute(f"DROP TABLE IF EXISTS {ProdutoOriginal.__table_name__}")
+    session.execute(f"DROP TABLE IF EXISTS produtos_sync")
     yield
-    session.execute(f"DROP TABLE IF EXISTS {ProdutoOriginal.__table_name__}")
+    session.execute(f"DROP TABLE IF EXISTS produtos_sync")
 
 def test_sync_table_cria_tabela(session):
     """Testa se sync_table cria a tabela quando ela não existe."""
@@ -22,7 +22,7 @@ def test_sync_table_cria_tabela(session):
     result = session.execute(f"""
         SELECT table_name FROM system_schema.tables 
         WHERE keyspace_name = '{session.keyspace}' 
-        AND table_name = '{ProdutoOriginal.__table_name__}'
+        AND table_name = 'produtos_sync'
     """)
     
     assert result.one() is not None
@@ -46,7 +46,7 @@ def test_sync_table_com_campo_novo(session):
     result = session.execute(f"""
         SELECT column_name FROM system_schema.columns 
         WHERE keyspace_name = '{session.keyspace}' 
-        AND table_name = '{ProdutoOriginal.__table_name__}'
+        AND table_name = 'produtos_sync'
         AND column_name = 'preco'
     """)
     
@@ -76,7 +76,7 @@ def test_sync_table_com_campo_removido(session):
     result = session.execute(f"""
         SELECT column_name FROM system_schema.columns 
         WHERE keyspace_name = '{session.keyspace}' 
-        AND table_name = '{ProdutoOriginal.__table_name__}'
+        AND table_name = 'produtos_sync'
         AND column_name = 'extra'
     """)
     
@@ -127,8 +127,8 @@ def test_sync_table_com_tipo_diferente(session):
     result = session.execute(f"""
         SELECT type FROM system_schema.columns 
         WHERE keyspace_name = '{session.keyspace}' 
-        AND table_name = '{ProdutoOriginal.__table_name__}'
+        AND table_name = 'produtos_sync'
         AND column_name = 'quantidade'
     """)
     
-    assert result.one().type == 'int' 
+    assert result.one().type == 'int'

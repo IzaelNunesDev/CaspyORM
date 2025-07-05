@@ -191,4 +191,4 @@ class TestNivel1Improvements:
             def __exit__(self, exc_type, exc_val, exc_tb):
                 logging.getLogger("caspyorm").removeHandler(self.handler)
         
-        return LogCapture() 
+        return LogCapture()

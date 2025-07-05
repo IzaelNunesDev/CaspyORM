@@ -30,6 +30,7 @@ class QuerySet:
     def __iter__(self):
         """Executa a query quando o queryset é iterado."""
         if self._result_cache is None:
+            print("EXECUTADO")
             self._execute_query()
         return iter(self._result_cache or [])
 

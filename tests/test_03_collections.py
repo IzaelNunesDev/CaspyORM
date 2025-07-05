@@ -40,22 +40,22 @@ def test_collections_nulas_e_vazias():
 
 def test_list_com_tipos_incorretos():
     artigo_id = uuid.uuid4()
-    with pytest.raises(ValueError, match="Todos os itens da lista devem ser do tipo"):
+    with pytest.raises(TypeError, match="Não foi possível converter item '123' da lista para o tipo str: Não foi possível converter 123 para str"):
         Artigo.create(id=artigo_id, tags_list=["python", 123, "cassandra"])
 
 def test_set_com_tipos_incorretos():
     artigo_id = uuid.uuid4()
-    with pytest.raises(ValueError, match="Todos os itens do set devem ser do tipo"):
+    with pytest.raises(TypeError, match="Não foi possível converter item '456' do set para o tipo str: Não foi possível converter 456 para str"):
         Artigo.create(id=artigo_id, colaboradores_set={"ana", 456, "bruno"})
 
 def test_map_com_tipos_incorretos():
     artigo_id = uuid.uuid4()
-    with pytest.raises(ValueError, match="Todas as chaves do map devem ser do tipo"):
+    with pytest.raises(TypeError, match="Não foi possível converter chave '123' do map para o tipo str: Não foi possível converter 123 para str"):
         Artigo.create(id=artigo_id, metadados_map={123: "valor", "chave": "valor"})
 
 def test_map_com_valores_incorretos():
     artigo_id = uuid.uuid4()
-    with pytest.raises(ValueError, match="Todos os valores do map devem ser do tipo"):
+    with pytest.raises(TypeError, match="Não foi possível converter valor '789' do map para o tipo str: Não foi possível converter 789 para str"):
         Artigo.create(id=artigo_id, metadados_map={"chave": 789, "outra": "valor"})
 
 def test_update_collections():

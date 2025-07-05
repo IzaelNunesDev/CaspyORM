@@ -1,6 +1,7 @@
 import uuid
 import pytest
 from caspyorm import fields, Model
+from caspyorm.exceptions import ValidationError
 
 # Modelo a ser usado nos testes de CRUD
 class Produto(Model):
@@ -61,5 +62,5 @@ def test_get_inexistente():
 
 def test_campo_required_sem_valor_falha():
     produto_id = uuid.uuid4()
-    with pytest.raises(ValueError, match="Campo 'nome' é obrigatório"):
+    with pytest.raises(ValidationError, match="Campo 'nome' é obrigatório"):
         Produto.create(id=produto_id)  # nome é required mas não foi fornecido 
