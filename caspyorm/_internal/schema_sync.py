@@ -1,203 +1,269 @@
 # caspyorm/_internal/schema_sync.py
-from typing import Dict, Any, List, Set, Tuple, Type
-from caspyorm.connection import get_cluster, get_session, execute
-from . import query_builder
 import logging
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
+
+from ..connection import get_session
+
+if TYPE_CHECKING:
+    from cassandra.cluster import Session
+    from ..model import Model
+    from ..exceptions import SchemaError
+else:
+    Session = Any
+    Model = Any
+    SchemaError = Exception
 
 logger = logging.getLogger(__name__)
 
-def get_cassandra_table_schema(keyspace: str, table_name: str) -> Dict[str, Any] | None:
+def get_cassandra_table_schema(session: Session, keyspace: str, table_name: str) -> Optional[Dict[str, Any]]:
     """
-    Busca os metadados de uma tabela existente no Cassandra e os retorna em um formato
-    compatível com nosso __caspy_schema__.
+    Obtém o schema atual de uma tabela no Cassandra.
+    Retorna None se a tabela não existir.
     """
-    cluster = get_cluster()
-    if not cluster:
+    try:
+        # Query para obter informações da tabela
+        query = """
+        SELECT column_name, type, kind
+        FROM system_schema.columns 
+        WHERE keyspace_name = ? AND table_name = ?
+        ORDER BY position
+        """
+        
+        prepared = session.prepare(query)
+        result = session.execute(prepared, (keyspace, table_name))
+        
+        if not result:
+            return None  # Tabela não existe
+        
+        # Estrutura para armazenar o schema
+        schema = {
+            'fields': {},
+            'primary_keys': [],
+            'partition_keys': [],
+            'clustering_keys': []
+        }
+        
+        for row in result:
+            column_name = row.column_name
+            column_type = row.type
+            column_kind = row.kind
+            
+            # Mapear tipos CQL para tipos Python
+            type_mapping = {
+                'text': 'text',
+                'varchar': 'text',
+                'int': 'int',
+                'bigint': 'int',
+                'float': 'float',
+                'double': 'float',
+                'boolean': 'boolean',
+                'uuid': 'uuid',
+                'timestamp': 'timestamp',
+                'date': 'date',
+                'time': 'time',
+                'blob': 'blob',
+                'decimal': 'decimal',
+                'varint': 'int',
+                'inet': 'inet',
+                'list': 'list',
+                'set': 'set',
+                'map': 'map',
+                'tuple': 'tuple',
+                'frozen': 'frozen',
+                'counter': 'counter',
+                'duration': 'duration',
+                'smallint': 'int',
+                'tinyint': 'int',
+                'timeuuid': 'uuid',
+                'ascii': 'text',
+                'json': 'text'
+            }
+            
+            # Simplificar tipos complexos para comparação
+            base_type = column_type.split('<')[0].split('(')[0].lower()
+            mapped_type = type_mapping.get(base_type, base_type)
+            
+            schema['fields'][column_name] = {
+                'type': mapped_type,
+                'cql_type': column_type,
+                'kind': column_kind
+            }
+            
+            # Classificar chaves
+            if column_kind == 'partition_key':
+                schema['partition_keys'].append(column_name)
+                schema['primary_keys'].append(column_name)
+            elif column_kind == 'clustering':
+                schema['clustering_keys'].append(column_name)
+                schema['primary_keys'].append(column_name)
+        
+        return schema
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter schema da tabela {table_name}: {e}")
         return None
 
-    try:
-        table_meta = cluster.metadata.keyspaces[keyspace].tables[table_name]
-    except KeyError:
-        return None  # Tabela não existe
-
-    cassandra_schema = {
-        'table_name': table_meta.name,
-        'fields': {col.name: {'type': str(col.cql_type)} for col in table_meta.columns.values()},
-        'partition_keys': [col.name for col in table_meta.partition_key],
-        'clustering_keys': [col.name for col in table_meta.clustering_key],
-        'indexes': [idx.name for idx in table_meta.indexes.values()]
-    }
-    # Chave primária completa para facilitar a comparação
-    cassandra_schema['primary_keys'] = cassandra_schema['partition_keys'] + cassandra_schema['clustering_keys']
+def apply_schema_changes(session: Session, table_name: str, model_schema: Dict[str, Any], db_schema: Dict[str, Any]) -> None:
+    """
+    Aplica as mudanças necessárias no schema da tabela.
+    """
+    logger.info("\n🚀 Aplicando alterações no schema...")
     
-    return cassandra_schema
+    # Adicionar novas colunas
+    for field_name, field_details in model_schema['fields'].items():
+        if field_name not in db_schema['fields']:
+            cql = f"ALTER TABLE {table_name} ADD {field_name} {field_details['type']}"
+            try:
+                session.execute(cql)
+                logger.info(f"  [+] Executando: {cql}")
+            except Exception as e:
+                logger.error(f"  [!] ERRO ao adicionar coluna '{field_name}': {e}")
+    
+    # Remover colunas (não suportado automaticamente por segurança)
+    for field_name in db_schema['fields']:
+        if field_name not in model_schema['fields']:
+            logger.warning("\n  [!] AVISO: A remoção automática de colunas não é suportada por segurança.")
+            logger.warning(f"      - Operação manual necessária: ALTER TABLE {table_name} DROP {field_name};")
+    
+    # Verificar mudanças de tipo (não suportado automaticamente)
+    for field_name in model_schema['fields']:
+        if field_name in db_schema['fields']:
+            model_type = model_schema['fields'][field_name]['type']
+            db_type = db_schema['fields'][field_name]['type']
+            if model_type != db_type:
+                mismatch = f"{field_name}: {db_type} -> {model_type}"
+                logger.warning("\n  [!] AVISO: A alteração automática de tipo de coluna não é suportada.")
+                logger.warning(f"      - Operação manual necessária para: {mismatch}")
+    
+    # Verificar mudanças na chave primária (não suportado)
+    if model_schema['primary_keys'] != db_schema['primary_keys']:
+        mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
+        logger.error("\n  [!] ERRO CRÍTICO: A alteração de chave primária não é possível no Cassandra.")
+        logger.error("      - A tabela deve ser recriada para aplicar esta mudança.")
+    
+    logger.info("\n✅ Aplicação de schema concluída.")
 
-def compare_schemas(model_schema: Dict[str, Any], db_schema: Dict[str, Any]) -> Dict[str, List[str]]:
+def build_create_table_cql(table_name: str, schema: Dict[str, Any]) -> str:
     """
-    Compara o schema do modelo com o schema do banco de dados e retorna as diferenças.
+    Constrói a query CQL para criar uma tabela.
     """
-    diffs: Dict[str, List[str]] = {
-        'added_in_model': [],
-        'removed_from_model': [],
-        'type_mismatch': [],
-        'pk_mismatch': [],
-    }
+    fields = []
+    for field_name, field_details in schema['fields'].items():
+        field_def = f"{field_name} {field_details['type']}"
+        fields.append(field_def)
+    
+    # Construir chave primária
+    if schema['partition_keys'] and schema['clustering_keys']:
+        # Chave composta: partition + clustering
+        pk_def = f"PRIMARY KEY (({', '.join(schema['partition_keys'])})"
+        if schema['clustering_keys']:
+            pk_def += f", {', '.join(schema['clustering_keys'])})"
+        else:
+            pk_def += ")"
+    elif schema['partition_keys']:
+        # Chave simples
+        pk_def = f"PRIMARY KEY ({', '.join(schema['partition_keys'])})"
+    else:
+        raise RuntimeError("Tabela deve ter pelo menos uma chave primária")
+    
+    fields.append(pk_def)
+    
+    return f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        {', '.join(fields)}
+    )
+    """
 
-    model_fields: Set[str] = set(model_schema['fields'].keys())
-    db_fields: Set[str] = set(db_schema['fields'].keys())
-
-    # 1. Campos adicionados no modelo (precisam ser adicionados no DB)
-    added_fields = model_fields - db_fields
-    diffs['added_in_model'] = list(added_fields)
-
-    # 2. Campos removidos do modelo (precisam ser removidos do DB)
-    removed_fields = db_fields - model_fields
-    diffs['removed_from_model'] = list(removed_fields)
-
-    # 3. Campos com tipo diferente
-    common_fields = model_fields.intersection(db_fields)
-    for field in common_fields:
+def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool = True) -> None:
+    """
+    Sincroniza o schema do modelo com a tabela no Cassandra.
+    
+    Args:
+        model_cls: Classe do modelo a ser sincronizada
+        auto_apply: Se True, aplica as mudanças automaticamente
+        verbose: Se True, exibe informações detalhadas
+    """
+    session = get_session()
+    if not session:
+        raise RuntimeError("Não há conexão ativa com o Cassandra")
+    
+    # Obter informações do modelo
+    table_name = model_cls.__table_name__
+    model_schema = model_cls.__caspy_schema__
+    
+    # Obter schema atual da tabela
+    keyspace = session.keyspace
+    db_schema = get_cassandra_table_schema(session, keyspace, table_name)
+    
+    if db_schema is None:
+        # Tabela não existe, criar
+        logger.info(f"Tabela '{table_name}' não encontrada. Criando...")
+        create_table_query = build_create_table_cql(table_name, model_schema)
+        
+        if verbose:
+            logger.info(f"Executando CQL para criar tabela:\n{create_table_query}")
+        
+        try:
+            session.execute(create_table_query)
+            logger.info("Tabela criada com sucesso.")
+        except Exception as e:
+            logger.error(f"Erro ao criar tabela: {e}")
+            raise
+        return
+    
+    # Comparar schemas
+    model_fields = set(model_schema['fields'].keys())
+    db_fields = set(db_schema['fields'].keys())
+    
+    fields_to_add = model_fields - db_fields
+    fields_to_remove = db_fields - model_fields
+    fields_to_check = model_fields & db_fields
+    
+    # Verificar tipos diferentes
+    type_mismatches = []
+    for field in fields_to_check:
         model_type = model_schema['fields'][field]['type']
         db_type = db_schema['fields'][field]['type']
         if model_type != db_type:
-            diffs['type_mismatch'].append(f"Campo '{field}': modelo ({model_type}) != DB ({db_type})")
-
-    # 4. Diferenças na chave primária
-    if sorted(model_schema['primary_keys']) != sorted(db_schema['primary_keys']):
-        diffs['pk_mismatch'].append(
-            f"Chave Primária: modelo ({model_schema['primary_keys']}) != DB ({db_schema['primary_keys']})"
-        )
-
-    return diffs
-
-def apply_schema_changes(model_schema: Dict[str, Any], diffs: Dict[str, List[str]]):
-    """
-    Gera e executa as queries CQL para aplicar as mudanças de schema detectadas.
-    """
-    table_name = model_schema['table_name']
+            type_mismatches.append(f"{field}: {db_type} -> {model_type}")
     
-    print("\n🚀 Aplicando alterações no schema...")
-
-    # --- Adicionar Colunas ---
-    if diffs['added_in_model']:
-        for field_name in diffs['added_in_model']:
-            field_details = model_schema['fields'][field_name]
-            cql = query_builder.build_add_column_cql(
-                table_name,
-                column_name=field_name,
-                column_type=field_details['type']
-            )
-            print(f"  [+] Executando: {cql}")
-            try:
-                execute(cql)
-                logger.info(f"Coluna '{field_name}' adicionada com sucesso")
-            except Exception as e:
-                print(f"  [!] ERRO ao adicionar coluna '{field_name}': {e}")
-                logger.error(f"Erro ao adicionar coluna '{field_name}': {e}")
+    # Verificar chave primária
+    pk_mismatch = None
+    if model_schema['primary_keys'] != db_schema['primary_keys']:
+        pk_mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
     
-    # --- Avisos para operações não suportadas ---
-    if diffs['removed_from_model']:
-        print("\n  [!] AVISO: A remoção automática de colunas não é suportada por segurança.")
-        for field_name in diffs['removed_from_model']:
-             print(f"      - Operação manual necessária: ALTER TABLE {table_name} DROP {field_name};")
+    # Verificar se há diferenças
+    has_changes = (fields_to_add or fields_to_remove or type_mismatches or pk_mismatch)
     
-    if diffs['type_mismatch']:
-        print("\n  [!] AVISO: A alteração automática de tipo de coluna não é suportada.")
-        for mismatch in diffs['type_mismatch']:
-            print(f"      - Operação manual necessária para: {mismatch}")
-            
-    if diffs['pk_mismatch']:
-        print("\n  [!] ERRO CRÍTICO: A alteração de chave primária não é possível no Cassandra.")
-        print("      - A tabela deve ser recriada para aplicar esta mudança.")
-        
-    print("\n✅ Aplicação de schema concluída.")
-
-def _create_indexes(table_name: str, schema: Dict[str, Any]) -> None:
-    """Cria índices secundários se definidos no schema."""
-    indexes = schema.get('indexes', [])
-    
-    for index_field in indexes:
-        try:
-            index_name = f"{table_name}_{index_field}_idx"
-            create_index_query = f"""
-                CREATE INDEX IF NOT EXISTS {index_name} 
-                ON {table_name} ({index_field})
-            """
-            execute(create_index_query)
-            logger.info(f"Índice '{index_name}' criado com sucesso")
-            
-        except Exception as e:
-            logger.warning(f"Erro ao criar índice para '{index_field}': {e}")
-            # Não falha a sincronização se o índice falhar
-
-def sync_table(model_cls: Type, auto_apply: bool = False, verbose: bool = True) -> None:
-    """
-    Sincroniza o schema da tabela no Cassandra com a definição do modelo.
-    """
-    model_schema = model_cls.__caspy_schema__
-    table_name = model_schema['table_name']
-    session = get_session()
-    keyspace = session.keyspace
-
-    db_schema = get_cassandra_table_schema(keyspace, table_name)
-
-    if db_schema is None:
-        # Tabela não existe, então a criamos
-        if verbose:
-            print(f"Tabela '{table_name}' não encontrada. Criando...")
-        
-        create_table_query = query_builder.build_create_table_cql(model_schema)
-        
-        if verbose:
-            print(f"Executando CQL para criar tabela:\n{create_table_query}")
-        
-        execute(create_table_query)
-        
-        if verbose:
-            print("Tabela criada com sucesso.")
-        
-        # Criar índices se necessário
-        _create_indexes(table_name, model_schema)
+    if not has_changes:
+        logger.info(f"✅ Schema da tabela '{table_name}' está sincronizado.")
         return
-
-    # Tabela existe, vamos comparar os schemas
-    diffs = compare_schemas(model_schema, db_schema)
     
-    # Remove as categorias de diferenças que estão vazias
-    has_diffs = any(diffs.values())
-
-    if not has_diffs:
-        if verbose:
-            print(f"✅ Schema da tabela '{table_name}' está sincronizado.")
-        return
-
-    # Etapa 3: Relatar as diferenças
+    # Há diferenças
+    logger.warning(f"⚠️  Schema da tabela '{table_name}' está dessincronizado!")
+    
     if verbose:
-        print(f"⚠️  Schema da tabela '{table_name}' está dessincronizado!")
+        if fields_to_add:
+            logger.info("\n  [+] Campos a serem ADICIONADOS na tabela:")
+            for field in fields_to_add:
+                logger.info(f"      - {field} (tipo: {model_schema['fields'][field]['type']})")
         
-        if diffs['added_in_model']:
-            print("\n  [+] Campos a serem ADICIONADOS na tabela:")
-            for field in diffs['added_in_model']:
-                print(f"      - {field} (tipo: {model_schema['fields'][field]['type']})")
+        if fields_to_remove:
+            logger.info("\n  [-] Campos a serem REMOVIDOS da tabela:")
+            for field in fields_to_remove:
+                logger.info(f"      - {field} (tipo: {db_schema['fields'][field]['type']})")
         
-        if diffs['removed_from_model']:
-            print("\n  [-] Campos a serem REMOVIDOS da tabela:")
-            for field in diffs['removed_from_model']:
-                print(f"      - {field} (tipo: {db_schema['fields'][field]['type']})")
-
-        if diffs['type_mismatch']:
-            print("\n  [~] Campos com TIPOS DIFERENTES:")
-            for mismatch in diffs['type_mismatch']:
-                print(f"      - {mismatch}")
-
-        if diffs['pk_mismatch']:
-            print("\n  [!] Chave primária diferente:")
-            for mismatch in diffs['pk_mismatch']:
-                print(f"      - {mismatch}")
+        if type_mismatches:
+            logger.info("\n  [~] Campos com TIPOS DIFERENTES:")
+            for mismatch in type_mismatches:
+                logger.info(f"      - {mismatch}")
+        
+        if pk_mismatch:
+            logger.error("\n  [!] Chave primária diferente:")
+            logger.error(f"      - {pk_mismatch}")
     
-    # Etapa 4: Aplicar alterações se auto_apply=True
+    # Aplicar mudanças se solicitado
     if auto_apply:
-        apply_schema_changes(model_schema, diffs)
+        apply_schema_changes(session, table_name, model_schema, db_schema)
     else:
-        if verbose:
-            print("\nExecute sync_table(auto_apply=True) para aplicar as mudanças automaticamente.")
+        logger.info("\nExecute sync_table(auto_apply=True) para aplicar as mudanças automaticamente.")

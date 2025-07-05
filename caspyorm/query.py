@@ -6,6 +6,7 @@ from caspyorm.connection import get_session, execute
 from caspyorm._internal import query_builder
 from .results import _map_row_to_instance
 import logging
+import warnings
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
@@ -56,13 +57,28 @@ class QuerySet:
         prepared = session.prepare(cql)
         result_set = session.execute(prepared, params)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
-        print(f"EXECUTADO: {cql} com params {params}")
+        logger.debug(f"Executando query: {cql} com parâmetros: {params}")
 
     # --- Métodos de API Pública do QuerySet ---
     
     def filter(self, **kwargs: Any) -> Self:
         """Adiciona condições de filtro à query."""
         clone = self._clone()
+        
+        # --- AVISO PARA CAMPOS NÃO INDEXADOS ---
+        schema = self.model_cls.__caspy_schema__
+        indexed_fields = set(schema['primary_keys']) | set(schema.get('indexes', []))
+        
+        for key in kwargs:
+            field_name = key.split('__')[0]  # Remove sufixos como __exact, __contains, etc.
+            if field_name not in indexed_fields:
+                warnings.warn(
+                    f"O campo '{field_name}' não é uma chave primária nem está indexado. "
+                    f"A consulta pode ser ineficiente ou falhar sem 'ALLOW FILTERING'.",
+                    UserWarning
+                )
+        # ----------------------------------------
+                
         clone._filters.update(kwargs)
         return clone
 
@@ -118,7 +134,7 @@ class QuerySet:
             self.model_cls.__caspy_schema__,
             filters=self._filters
         )
-        print(f"EXECUTANDO DELETE: {cql} com params {params}")
+        logger.debug(f"Executando DELETE: {cql} com parâmetros: {params}")
         prepared = session.prepare(cql)
         session.execute(prepared, params)
         return 0  # Cassandra não retorna número de linhas deletadas

@@ -67,6 +67,13 @@ class Text(BaseField):
     cql_type = 'text'
     python_type = str
 
+    def to_python(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError(f"Não foi possível converter {value!r} para str")
+        return value
+
 class UUID(BaseField):
     cql_type = 'uuid'
     python_type = uuid.UUID
@@ -110,13 +117,25 @@ class List(BaseField):
         """Converte uma lista do Cassandra para uma lista de tipos Python."""
         if value is None:
             return []  # Retorna lista vazia por conveniência
-        return [self.inner_field.to_python(item) for item in value]
+        result = []
+        for item in value:
+            try:
+                result.append(self.inner_field.to_python(item))
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter item '{item}' da lista para o tipo {self.inner_field.python_type.__name__}: {e}")
+        return result
 
     def to_cql(self, value: Any) -> Any:
         """Converte uma lista Python para um formato serializável pelo Cassandra."""
         if value is None:
             return None
-        return [self.inner_field.to_cql(item) for item in value]
+        result = []
+        for item in value:
+            try:
+                result.append(self.inner_field.to_cql(item))
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter item '{item}' da lista para o tipo {self.inner_field.python_type.__name__}: {e}")
+        return result
 
     def get_pydantic_type(self) -> Type[Any]:
         """Retorna o tipo Pydantic/Python equivalente para este campo."""
@@ -143,12 +162,24 @@ class Set(BaseField):
     def to_python(self, value: Any) -> Any:
         if value is None:
             return set()
-        return set(self.inner_field.to_python(item) for item in value)
+        result = set()
+        for item in value:
+            try:
+                result.add(self.inner_field.to_python(item))
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter item '{item}' do set para o tipo {self.inner_field.python_type.__name__}: {e}")
+        return result
 
     def to_cql(self, value: Any) -> Any:
         if value is None:
             return None
-        return [self.inner_field.to_cql(item) for item in value]
+        result = []
+        for item in value:
+            try:
+                result.append(self.inner_field.to_cql(item))
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter item '{item}' do set para o tipo {self.inner_field.python_type.__name__}: {e}")
+        return result
 
     def get_pydantic_type(self) -> Type[Any]:
         from typing import Set as SetType
@@ -175,12 +206,34 @@ class Map(BaseField):
     def to_python(self, value: Any) -> Any:
         if value is None:
             return {}
-        return {self.key_field.to_python(k): self.value_field.to_python(v) for k, v in value.items()}
+        result = {}
+        for k, v in value.items():
+            try:
+                key = self.key_field.to_python(k)
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter chave '{k}' do map para o tipo {self.key_field.python_type.__name__}: {e}")
+            try:
+                val = self.value_field.to_python(v)
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter valor '{v}' do map para o tipo {self.value_field.python_type.__name__}: {e}")
+            result[key] = val
+        return result
 
     def to_cql(self, value: Any) -> Any:
         if value is None:
             return None
-        return {self.key_field.to_cql(k): self.value_field.to_cql(v) for k, v in value.items()}
+        result = {}
+        for k, v in value.items():
+            try:
+                key = self.key_field.to_cql(k)
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter chave '{k}' do map para o tipo {self.key_field.python_type.__name__}: {e}")
+            try:
+                val = self.value_field.to_cql(v)
+            except TypeError as e:
+                raise TypeError(f"Não foi possível converter valor '{v}' do map para o tipo {self.value_field.python_type.__name__}: {e}")
+            result[key] = val
+        return result
 
     def get_pydantic_type(self) -> Type[Any]:
         from typing import Dict as DictType

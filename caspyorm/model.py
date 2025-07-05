@@ -1,14 +1,17 @@
 # caspyorm/model.py (REVISADO)
 
-from typing import Any, ClassVar, Dict, Optional, List
+from typing import Any, ClassVar, Dict, Optional, List, Type
 from typing_extensions import Self
 import json
+import logging
 
 from ._internal.model_construction import ModelMetaclass
 from ._internal.schema_sync import sync_table
 from ._internal.serialization import generate_pydantic_model, model_to_dict, model_to_json
 from .query import QuerySet, get_one, filter_query, save_instance
+from caspyorm.exceptions import ValidationError
 
+logger = logging.getLogger(__name__)
 
 class Model(metaclass=ModelMetaclass):
     # ... (o resto da classe permanece igual, mas agora os imports apontam para a lógica real)
@@ -24,9 +27,15 @@ class Model(metaclass=ModelMetaclass):
             value = kwargs.get(key)
             if value is None and field_obj.default is not None:
                 value = field_obj.default() if callable(field_obj.default) else field_obj.default
-            # Sempre chamar to_python para campos de coleção (list, set, dict)
-            if hasattr(field_obj, 'python_type') and field_obj.python_type in (list, set, dict):
-                value = field_obj.to_python(value)
+            # Validação de campo required
+            if value is None and field_obj.required:
+                raise ValidationError(f"Campo '{key}' é obrigatório e não foi fornecido.")
+            # Validação de tipo para coleções
+            if hasattr(field_obj, 'python_type') and field_obj.python_type in (list, set, dict) and value is not None:
+                try:
+                    value = field_obj.to_python(value)
+                except TypeError as e:
+                    raise TypeError(str(e))
             elif value is not None and not isinstance(value, field_obj.python_type):
                 value = field_obj.to_python(value)
             self.__dict__[key] = value
@@ -54,7 +63,7 @@ class Model(metaclass=ModelMetaclass):
         return instance
 
     @classmethod
-    def get(cls, **kwargs: Any) -> Optional[Self]:
+    def get(cls, **kwargs: Any) -> Optional["Model"]:
         """Busca um único registro."""
         # A lógica foi movida para query.py, que usa o QuerySet
         return get_one(cls, **kwargs)
@@ -71,7 +80,7 @@ class Model(metaclass=ModelMetaclass):
 
     # --- Pydantic & FastAPI Integração ---
     @classmethod
-    def as_pydantic(cls, name: Optional[str] = None, exclude: Optional[List[str]] = None) -> type:
+    def as_pydantic(cls, name: Optional[str] = None, exclude: Optional[List[str]] = None) -> Type[Any]:
         """Gera um modelo Pydantic (classe) a partir deste modelo CaspyORM."""
         return generate_pydantic_model(cls, name=name, exclude=exclude or [])
 
@@ -97,4 +106,4 @@ class Model(metaclass=ModelMetaclass):
         pk_filters = {field: getattr(self, field) for field in pk_fields}
         from .query import QuerySet
         QuerySet(self.__class__).filter(**pk_filters).delete()
-        print(f"DELETADO: {self}")
+        logger.info(f"Instância deletada: {self}")

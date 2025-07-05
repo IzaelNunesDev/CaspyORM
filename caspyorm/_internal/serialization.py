@@ -3,6 +3,14 @@ import json
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Type, Optional
+import logging
+
+# Importação do Model para tipagem
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..model import Model
+
+logger = logging.getLogger(__name__)
 
 # Lidar com a importação opcional do Pydantic
 try:
@@ -14,7 +22,7 @@ except ImportError:
     PYDANTIC_V2 = False
     # Definir stubs para evitar erros se pydantic não estiver instalado
     class BaseModel: pass
-    def create_model(*args, **kwargs): pass
+    def create_model(*args, **kwargs): return None
     def Field(*args, **kwargs): pass
 
 class CaspyJSONEncoder(json.JSONEncoder):
@@ -56,43 +64,29 @@ def generate_pydantic_model(
 
     exclude = exclude or []
     
-    # Mapeia nossos tipos de campo para tipos Python/Pydantic
-    type_mapping = {
-        'uuid': uuid.UUID,
-        'text': str,
-        'int': int,
-        'float': float,
-        'boolean': bool,
-        'timestamp': datetime,
-        'varchar': str,  # Adicionado para compatibilidade
-    }
-
     pydantic_fields: Dict[str, Any] = {}
-    caspy_schema = model_cls.__caspy_schema__
+    caspy_fields = model_cls.model_fields  # Usar a propriedade da classe
 
-    for field_name, field_details in caspy_schema['fields'].items():
+    for field_name, field_obj in caspy_fields.items():
         if field_name in exclude:
             continue
         
-        # Obtém o tipo Python correspondente
-        python_type = type_mapping.get(field_details['type'])
-        if python_type is None:
-            # Pula campos com tipos não mapeados por enquanto
-            print(f"Aviso: tipo CQL '{field_details['type']}' não mapeado para Pydantic. Pulando campo '{field_name}'.")
+        # Usa o método get_pydantic_type() que implementamos nos fields
+        try:
+            python_type = field_obj.get_pydantic_type()
+        except (ImportError, TypeError) as e:
+            logger.warning(f"Não foi possível obter o tipo Pydantic para o campo '{field_name}'. Erro: {e}")
             continue
-
-        # Define se o campo é obrigatório ou opcional no Pydantic
-        # Se for obrigatório na CaspyORM OU não tiver default, é obrigatório no Pydantic
-        if field_details.get('required', False) or field_details.get('default') is None:
-             pydantic_fields[field_name] = (python_type, ...) # '...' indica obrigatório
+            
+        if field_obj.required or field_obj.default is None:
+             pydantic_fields[field_name] = (python_type, ...)
         else:
-             # Caso contrário, é opcional com um valor padrão
-             pydantic_fields[field_name] = (python_type, field_details['default'])
+             pydantic_fields[field_name] = (python_type, field_obj.default)
 
-    # Gera o nome do modelo Pydantic se não for fornecido
     model_name = name or f"{model_cls.__name__}Pydantic"
-    
-    # Usa a função `create_model` do Pydantic para criar a classe dinamicamente
     pydantic_model = create_model(model_name, **pydantic_fields)
+    
+    if pydantic_model is None:
+        raise RuntimeError("Falha ao criar modelo Pydantic")
     
     return pydantic_model 

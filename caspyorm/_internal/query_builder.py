@@ -1,6 +1,9 @@
 # caspyorm/_internal/query_builder.py
 
+import logging
 from typing import Any, Dict, Tuple, List, Optional
+
+logger = logging.getLogger(__name__)
 
 def build_insert_cql(schema: Dict[str, Any]) -> str:
     """Constrói uma query INSERT."""
@@ -65,7 +68,7 @@ def build_select_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] =
             # Verificar se o campo é uma chave de clusterização (se disponível no schema)
             clustering_keys = schema.get('clustering_keys', [])
             if clustering_keys and field_name not in clustering_keys:
-                print(f"AVISO: Ordenando por '{field_name}', que não é uma chave de clusterização. A query pode falhar se não for permitida.")
+                logger.warning(f"AVISO: Ordenando por '{field_name}', que não é uma chave de clusterização. A query pode falhar se não for permitida.")
 
             order_clauses.append(f"{field_name} {direction}")
             
