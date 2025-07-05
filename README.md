@@ -329,4 +329,7 @@ python tests/nyc_taxi/test_nyc_1gb_clean.py
 
 **Status**: ✅ **Pronto para Uso em Produção**  
 **Última Atualização**: 05/07/2025  
-**Versão**: CaspyORM (desenvolvimento local) 
+**Versão**: CaspyORM (desenvolvimento local)
+
+📦 Esta é a branch `standalone`, contendo apenas o pacote `caspyorm` para instalação via pip.
+Para o repositório completo com exemplos, testes e documentação, acesse a branch `main`. 
