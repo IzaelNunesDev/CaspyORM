@@ -13,6 +13,17 @@ class ProdutoComIndice(Model):
     preco = fields.Float(index=True)     # Outro campo indexado
     ativo = fields.Boolean()             # Campo não indexado
 
+class ItemSemDefault(Model):
+    __table_name__ = 'item_sem_default_teste'
+    id = fields.UUID(primary_key=True, default=None)  # Explicitamente sem default para permitir a instanciação com None
+    nome = fields.Text()
+
+class Post(Model):
+    __table_name__ = 'posts_collection_update'
+    id = fields.UUID(primary_key=True)
+    tags = fields.List(fields.Text())
+    colaboradores = fields.Set(fields.Text())
+
 @pytest.fixture(autouse=True)
 def limpar_tabela_indice(session):
     """Limpa a tabela antes de cada teste."""
@@ -265,23 +276,15 @@ def test_bulk_create_operation(session):
     assert p_from_db.preco == 0.0
 
 def test_bulk_create_with_pk_null_fails(session):
-    """Testa se bulk_create falha se uma chave primária for nula."""
-    ProdutoComIndice.sync_table()
+    """Testa se bulk_create falha se uma chave primária for nula, validando a exceção correta."""
+    ItemSemDefault.sync_table()
 
-    # Criar uma instância com id=None - isso deve falhar na validação do modelo
-    # O Cassandra aceita None para UUID, mas nossa validação deve impedir
-    try:
-        instance = ProdutoComIndice(id=None, nome="Produto Inválido", categoria="erro", preco=99.99)
-        # Se chegou aqui, o modelo aceitou None, então vamos testar se o bulk_create falha
-        instances_with_null_pk = [instance]
-        
-        # Como o Cassandra aceita None para UUID, vamos verificar se pelo menos temos um warning
-        with pytest.warns(UserWarning, match="Primary key"):
-            ProdutoComIndice.bulk_create(instances_with_null_pk)
-            
-    except ValueError as e:
-        # Se o modelo rejeitou None, isso é o comportamento esperado
-        assert "Primary key" in str(e) or "id" in str(e)
+    # Este modelo permite a criação de uma instância com id=None
+    instancia_invalida = ItemSemDefault(id=None, nome="Produto Inválido")
+    
+    # A exceção ValueError deve ser levantada pela validação interna do bulk_create
+    with pytest.raises(ValueError, match="Primary key 'id' não pode ser nula em bulk_create"):
+        ItemSemDefault.bulk_create([instancia_invalida])
 
 def test_bulk_create_empty_list(session):
     """Testa se bulk_create funciona corretamente com lista vazia."""
@@ -313,4 +316,27 @@ def test_bulk_create_large_batch(session):
 
     # Verifica se todos foram criados
     count = ProdutoComIndice.filter(categoria="grande_lote").count()
-    assert count == num_instances, f"Esperado {num_instances} produtos, mas encontrado {count}" 
+    assert count == num_instances, f"Esperado {num_instances} produtos, mas encontrado {count}"
+
+def test_atomic_collection_update(session):
+    """Testa a atualização atômica de coleções (List e Set)."""
+    Post.sync_table()
+
+    # Cria um post inicial
+    post = Post.create(
+        id=uuid.uuid4(),
+        tags=['python', 'orm'],
+        colaboradores={'ana', 'bruno'}
+    )
+
+    # 1. Adicionar itens a uma lista
+    post.update_collection('tags', add=['cassandra'])
+    
+    # 2. Remover itens de um set
+    post.update_collection('colaboradores', remove={'bruno'})
+
+    # Busca o post do banco para verificar o estado final
+    updated_post = Post.get(id=post.id)
+    
+    assert sorted(updated_post.tags) == sorted(['python', 'orm', 'cassandra'])
+    assert updated_post.colaboradores == {'ana'} 

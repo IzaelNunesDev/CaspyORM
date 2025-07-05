@@ -259,3 +259,33 @@ def build_update_cql(schema: Dict[str, Any], update_data: Dict[str, Any], pk_fil
     logger.debug(f"Query UPDATE gerada: {cql} com parâmetros: {params}")
     
     return cql, params
+
+def build_collection_update_cql(schema: Dict[str, Any], field_name: str, add: Any, remove: Any, pk_filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
+    """Constrói uma query UPDATE para adicionar/remover itens de uma coleção."""
+    table_name = schema['table_name']
+    
+    if add is None and remove is None:
+        raise ValueError("Deve ser fornecido 'add' ou 'remove' para update_collection.")
+    
+    set_clauses = []
+    params = []
+    
+    if add:
+        set_clauses.append(f"{field_name} = {field_name} + ?")
+        params.append(list(add)) # Cassandra espera uma lista para o operador '+'
+
+    if remove:
+        set_clauses.append(f"{field_name} = {field_name} - ?")
+        params.append(list(remove)) # E uma lista para o operador '-'
+        
+    set_clause = ", ".join(set_clauses)
+    
+    where_clauses = [f"{field} = ?" for field in pk_filters.keys()]
+    where_clause = " AND ".join(where_clauses)
+    
+    params.extend(pk_filters.values())
+    
+    cql = f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}"
+    
+    logger.debug(f"Query de update de coleção gerada: {cql} com parâmetros: {params}")
+    return cql, params

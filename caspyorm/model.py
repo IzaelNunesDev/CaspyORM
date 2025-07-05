@@ -190,3 +190,34 @@ class Model(metaclass=ModelMetaclass):
         from .query import QuerySet
         QuerySet(self.__class__).filter(**pk_filters).delete()
         logger.info(f"Instância deletada: {self}")
+
+    def update_collection(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
+        """
+        Atualiza atomicamente um campo de coleção (List, Set) no banco de dados.
+
+        Args:
+            field_name (str): O nome do campo da coleção a ser atualizado.
+            add (list | set): Itens para adicionar à coleção.
+            remove (list | set): Itens para remover da coleção.
+        """
+        if field_name not in self.model_fields:
+            raise ValidationError(f"Campo '{field_name}' não existe no modelo {self.__class__.__name__}")
+        
+        from ._internal.query_builder import build_collection_update_cql
+        cql, params = build_collection_update_cql(
+            self.__caspy_schema__,
+            field_name,
+            add=add,
+            remove=remove,
+            pk_filters={pk: getattr(self, pk) for pk in self.__caspy_schema__['primary_keys']}
+        )
+        try:
+            from .connection import get_session
+            session = get_session()
+            prepared = session.prepare(cql)
+            session.execute(prepared, params)
+            logger.info(f"Coleção '{field_name}' atualizada para a instância: {self}")
+        except Exception as e:
+            logger.error(f"Erro ao atualizar coleção: {e}")
+            raise
+        return self
