@@ -95,6 +95,22 @@ class Float(BaseField):
 class Boolean(BaseField):
     cql_type = 'boolean'
     python_type = bool
+    
+    def to_python(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            if value.lower() in ('true', '1', 'yes', 'on'):
+                return True
+            elif value.lower() in ('false', '0', 'no', 'off'):
+                return False
+            else:
+                raise TypeError(f"Não foi possível converter string '{value}' para boolean")
+        if isinstance(value, int):
+            return bool(value)
+        raise TypeError(f"Não foi possível converter {value!r} para boolean")
 
 class Timestamp(BaseField):
     cql_type = 'timestamp'

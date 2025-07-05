@@ -1,7 +1,30 @@
 import pytest
 import uuid
-from caspyorm import fields, Model, connection
+from caspyorm import fields, Model
+from caspyorm.connection import connection
 from caspyorm.exceptions import CaspyORMException, ValidationError, ConnectionError
+
+# NOVA FIXTURE para isolar os testes de desconexão
+@pytest.fixture
+def disconnected_session():
+    """Fixture que desconecta a sessão para um teste e a reconecta depois."""
+    # Salva o estado atual da conexão
+    was_connected = connection.is_connected
+    
+    # Desconecta se estiver conectado
+    if was_connected:
+        connection.disconnect()
+    
+    yield  # Permite que o teste execute
+    
+    # Reconecta se estava conectado antes
+    if was_connected:
+        try:
+            connection.connect(contact_points=["127.0.0.1"], keyspace="caspyorm_test_suite")
+        except Exception as e:
+            print(f"Erro ao reconectar: {e}")
+            # Tenta reconectar novamente
+            connection.connect(contact_points=["127.0.0.1"], keyspace="caspyorm_test_suite")
 
 def with_connection(test_func):
     """Decorator para garantir que a conexão está ativa antes do teste."""
@@ -47,13 +70,11 @@ def test_excecao_tipo_invalido(session):
     with pytest.raises(TypeError, match="Não foi possível converter"):
         Produto.create(id=uuid.uuid4(), preco="não é número")
 
-def test_excecao_conexao_nao_estabelecida():
+def test_excecao_conexao_nao_estabelecida(disconnected_session):
     """Testa se exceção é levantada quando não há conexão com Cassandra."""
     from caspyorm.connection import connection
     
-    # Desconecta se estiver conectado
-    if connection.is_connected:
-        connection.disconnect()
+    # A fixture já garantiu a desconexão
     
     class Teste(Model):
         __table_name__ = 'teste_conexao'
@@ -65,18 +86,14 @@ def test_excecao_conexao_nao_estabelecida():
 def test_excecao_operador_invalido(session):
     """Testa se exceção é levantada quando operador de filtro é inválido."""
     class Artigo(Model):
-        __table_name__ = 'artigos_exceptions'
+        __table_name__ = 'artigos_exceptions_op'
         id = fields.UUID(primary_key=True)
         titulo = fields.Text()
     
-    # Primeiro sincroniza a tabela
     Artigo.sync_table()
     
-    # Cria um artigo para testar
-    artigo = Artigo.create(id=uuid.uuid4(), titulo="Teste")
-    
-    # Testa operador inválido - deve gerar warning mas não erro
-    with pytest.warns(UserWarning, match="não é uma chave primária nem está indexado"):
+    # A biblioteca corretamente levanta um ValueError, não um UserWarning
+    with pytest.raises(ValueError, match="Operador de filtro não suportado: 'invalid_op'"):
         list(Artigo.filter(titulo__invalid_op="valor"))
 
 def test_excecao_campo_nao_indexado(session):
@@ -101,13 +118,14 @@ def test_excecao_primary_key_obrigatoria(session):
     """Testa se exceção é levantada quando primary key não é fornecida."""
     class Item(Model):
         __table_name__ = 'itens_exceptions'
-        id = fields.UUID(primary_key=True)
+        # Desabilita o gerador de UUID padrão para permitir None no teste
+        id = fields.UUID(primary_key=True, default=None)
         nome = fields.Text()
     
-    # Primeiro sincroniza a tabela
     Item.sync_table()
     
-    with pytest.raises(ValidationError, match="Primary key 'id' é obrigatória"):
+    # A validação agora está em save(), que é chamado por create()
+    with pytest.raises(ValidationError, match="Primary key 'id' cannot be None before saving."):
         Item.create(nome="Item sem ID")
 
 def test_excecao_colecao_tipo_invalido(session):
@@ -151,13 +169,11 @@ def test_excecao_modelo_sem_primary_key():
         class ModeloSemPK(Model):
             nome = fields.Text()
 
-def test_excecao_sync_table_sem_conexao():
+def test_excecao_sync_table_sem_conexao(disconnected_session):
     """Testa se exceção é levantada ao tentar sincronizar sem conexão."""
     from caspyorm.connection import connection
     
-    # Desconecta se estiver conectado
-    if connection.is_connected:
-        connection.disconnect()
+    # A fixture já garantiu a desconexão
     
     class TesteSync(Model):
         __table_name__ = 'teste_sync'
@@ -182,6 +198,8 @@ def test_excecao_boolean_invalido(session):
         __table_name__ = 'config_boolean_exceptions'
         id = fields.UUID(primary_key=True)
         ativo = fields.Boolean()
+    
+    Config.sync_table()
     
     with pytest.raises(TypeError, match="Não foi possível converter"):
         Config.create(id=uuid.uuid4(), ativo="não é boolean")
@@ -222,21 +240,21 @@ def test_excecao_atualizar_campo_inexistente(session):
         usuario.update(campo_inexistente="valor")
 
 def test_excecao_delete_sem_primary_key(session):
-    """Testa se exceção é levantada quando tentamos deletar sem primary key."""
+    """Testa se exceção é levantada quando tentamos deletar com primary key nula."""
     class Usuario(Model):
         __table_name__ = 'usuarios_delete_exceptions'
         id = fields.UUID(primary_key=True)
         nome = fields.Text()
     
-    # Primeiro sincroniza a tabela
     Usuario.sync_table()
     
-    usuario = Usuario.create(id=uuid.uuid4(), nome="João")
+    usuario = Usuario(id=uuid.uuid4(), nome="João") # Não salva, apenas instancia
     
-    # Remove a primary key usando __dict__ para contornar a validação
-    usuario.__dict__['id'] = None
+    # Simula uma PK nula
+    usuario.id = None
     
-    with pytest.raises(ValidationError, match="Primary key é obrigatória para deletar"):
+    # A validação agora está em `delete()`
+    with pytest.raises(ValidationError, match="Primary key 'id' is required to delete, but was None."):
         usuario.delete()
 
 def test_excecao_filtro_sem_operador(session):
@@ -246,7 +264,8 @@ def test_excecao_filtro_sem_operador(session):
         id = fields.UUID(primary_key=True)
         nome = fields.Text()
     
-    # Primeiro sincroniza a tabela
+    # Limpa a tabela e sincroniza
+    session.execute(f"DROP TABLE IF EXISTS {Usuario.__table_name__}")
     Usuario.sync_table()
     
     # Cria um usuário para testar
@@ -278,6 +297,7 @@ def test_excecao_acesso_campo_inexistente(session):
         id = fields.UUID(primary_key=True)
         nome = fields.Text()
     
+    Usuario.sync_table()
     usuario = Usuario.create(id=uuid.uuid4(), nome="João")
     
     with pytest.raises(AttributeError):
@@ -290,6 +310,7 @@ def test_excecao_atribuicao_campo_inexistente(session):
         id = fields.UUID(primary_key=True)
         nome = fields.Text()
     
+    Usuario.sync_table()
     usuario = Usuario.create(id=uuid.uuid4(), nome="João")
     
     # Atribuição a campo inexistente deve funcionar (comportamento atual)
@@ -297,16 +318,17 @@ def test_excecao_atribuicao_campo_inexistente(session):
     assert usuario.campo_inexistente == "valor"
 
 def test_excecao_primary_key_none(session):
-    """Testa se exceção é levantada quando primary key é None."""
+    """Testa se exceção é levantada quando primary key é None no create."""
     class Usuario(Model):
         __table_name__ = 'usuarios_pk_none_exceptions'
-        id = fields.UUID(primary_key=True)
+        # Desabilita o gerador de UUID padrão para permitir None no teste
+        id = fields.UUID(primary_key=True, default=None)
         nome = fields.Text()
     
-    # Primeiro sincroniza a tabela
     Usuario.sync_table()
     
-    with pytest.raises(ValidationError, match="Primary key 'id' é obrigatória"):
+    # A validação agora está em save(), que é chamado por create()
+    with pytest.raises(ValidationError, match="Primary key 'id' cannot be None before saving."):
         Usuario.create(id=None, nome="João")
 
 def test_excecao_campo_required_none(session):

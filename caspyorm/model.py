@@ -61,6 +61,10 @@ class Model(metaclass=ModelMetaclass):
         return model_to_json(self, by_alias=by_alias, indent=indent)
 
     def save(self) -> Self:
+        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao salvar.
+        for pk_name in self.__caspy_schema__['primary_keys']:
+            if getattr(self, pk_name, None) is None:
+                raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
         save_instance(self)
         return self
 
@@ -161,7 +165,15 @@ class Model(metaclass=ModelMetaclass):
         pk_fields = self.__caspy_schema__['primary_keys']
         if not pk_fields:
             raise RuntimeError("Não é possível deletar um modelo sem chave primária.")
-        pk_filters = {field: getattr(self, field) for field in pk_fields}
+        
+        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao deletar.
+        pk_filters = {}
+        for field in pk_fields:
+            value = getattr(self, field, None)
+            if value is None:
+                raise ValidationError(f"Primary key '{field}' is required to delete, but was None.")
+            pk_filters[field] = value
+        
         from .query import QuerySet
         QuerySet(self.__class__).filter(**pk_filters).delete()
         logger.info(f"Instância deletada: {self}")

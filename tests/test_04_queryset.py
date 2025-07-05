@@ -4,9 +4,9 @@ from caspyorm import fields, Model
 
 class Funcionario(Model):
     __table_name__ = "funcionarios_qs"
-    id = fields.UUID(primary_key=True)
-    setor = fields.Text(primary_key=True)
-    salario = fields.Integer(clustering_key=True) # Importante para ordenação
+    setor = fields.Text(partition_key=True)        # Chave de partição
+    salario = fields.Integer(clustering_key=True)  # Chave de clusterização para ordenar
+    id = fields.UUID(clustering_key=True)          # Garante unicidade da PK
     nome = fields.Text(index=True)
 
 @pytest.fixture(scope="function")
