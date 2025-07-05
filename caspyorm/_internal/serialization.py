@@ -78,10 +78,14 @@ def generate_pydantic_model(
             logger.warning(f"Não foi possível obter o tipo Pydantic para o campo '{field_name}'. Erro: {e}")
             continue
             
-        if field_obj.required or field_obj.default is None:
-             pydantic_fields[field_name] = (python_type, ...)
+        if field_obj.required:
+            pydantic_fields[field_name] = (python_type, ...)
+        elif field_obj.default is not None:
+            pydantic_fields[field_name] = (python_type, field_obj.default)
         else:
-             pydantic_fields[field_name] = (python_type, field_obj.default)
+            # Campo opcional sem default
+            from typing import Optional as OptionalType
+            pydantic_fields[field_name] = (OptionalType[python_type], None)
 
     model_name = name or f"{model_cls.__name__}Pydantic"
     pydantic_model = create_model(model_name, **pydantic_fields)

@@ -79,7 +79,7 @@ def build_select_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] =
         cql += f" LIMIT ?"
         params.append(limit)
 
-    # Adicionar ALLOW FILTERING para flexibilidade
+    # Adicionar ALLOW FILTERING quando há filtros
     if filters:
         cql += " ALLOW FILTERING"
             

@@ -122,6 +122,8 @@ class List(BaseField):
     def to_python(self, value: Any) -> Any:
         """Converte uma lista do Cassandra para uma lista de tipos Python."""
         if value is None:
+            if self.required:
+                raise ValueError(f"Campo é obrigatório mas recebeu None")
             return []  # Retorna lista vazia por conveniência
         result = []
         for item in value:
@@ -167,6 +169,8 @@ class Set(BaseField):
 
     def to_python(self, value: Any) -> Any:
         if value is None:
+            if self.required:
+                raise ValueError(f"Campo é obrigatório mas recebeu None")
             return set()
         result = set()
         for item in value:
@@ -211,6 +215,8 @@ class Map(BaseField):
 
     def to_python(self, value: Any) -> Any:
         if value is None:
+            if self.required:
+                raise ValueError(f"Campo é obrigatório mas recebeu None")
             return {}
         result = {}
         for k, v in value.items():

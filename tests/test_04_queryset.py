@@ -4,10 +4,10 @@ from caspyorm import fields, Model
 
 class Funcionario(Model):
     __table_name__ = "funcionarios_qs"
-    id = fields.UUID()
+    id = fields.UUID(primary_key=True)
     setor = fields.Text(primary_key=True)
     salario = fields.Integer(clustering_key=True) # Importante para ordenação
-    nome = fields.Text()
+    nome = fields.Text(index=True)
 
 @pytest.fixture(scope="function")
 def funcionarios_data(session):

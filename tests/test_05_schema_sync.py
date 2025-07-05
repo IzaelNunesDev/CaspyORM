@@ -1,6 +1,39 @@
 import pytest
+import time
 from caspyorm import fields, Model
 import uuid
+
+def wait_for_column(session, keyspace, table, column, timeout=5, should_exist=True):
+    """
+    Aguarda até que uma coluna apareça ou desapareça do schema.
+    
+    Args:
+        session: Sessão do Cassandra
+        keyspace: Nome do keyspace
+        table: Nome da tabela
+        column: Nome da coluna
+        timeout: Timeout em segundos
+        should_exist: True se espera que a coluna exista, False se espera que não exista
+    
+    Returns:
+        bool: True se a condição foi atendida dentro do timeout
+    """
+    for _ in range(timeout):
+        result = session.execute(f"""
+            SELECT column_name FROM system_schema.columns
+            WHERE keyspace_name = '{keyspace}'
+            AND table_name = '{table}'
+            AND column_name = '{column}'
+        """)
+        
+        exists = result.one() is not None
+        
+        if exists == should_exist:
+            return True
+            
+        time.sleep(1)
+    
+    return False
 
 class ProdutoOriginal(Model):
     __table_name__ = 'produtos_sync'
@@ -39,18 +72,19 @@ def test_sync_table_com_campo_novo(session):
         nome = fields.Text()
         preco = fields.Float()  # Substituído Decimal por Float
     
-    # Sincroniza novamente
-    ProdutoAtualizado.sync_table()
+    # Sincroniza novamente (com auto_apply para aplicar mudanças)
+    ProdutoAtualizado.sync_table(auto_apply=True)
     
     # Verifica se o campo foi adicionado
+    # Como o sync_table recria a tabela, vamos verificar se a tabela foi criada com o campo correto
     result = session.execute(f"""
         SELECT column_name FROM system_schema.columns 
         WHERE keyspace_name = '{session.keyspace}' 
         AND table_name = 'produtos_sync'
-        AND column_name = 'preco'
     """)
     
-    assert result.one() is not None
+    columns = [row.column_name for row in result]
+    assert 'preco' in columns, f"Campo 'preco' não encontrado. Colunas: {columns}"
 
 def test_sync_table_com_campo_removido(session):
     """Testa se sync_table remove campos que não existem mais no modelo."""
@@ -69,18 +103,19 @@ def test_sync_table_com_campo_removido(session):
         id = fields.UUID(primary_key=True)
         nome = fields.Text()
     
-    # Sincroniza novamente
-    ProdutoSemExtra.sync_table()
+    # Sincroniza novamente (com auto_apply para aplicar mudanças)
+    ProdutoSemExtra.sync_table(auto_apply=True)
     
     # Verifica se o campo foi removido
+    # Como o sync_table recria a tabela, vamos verificar se a tabela foi criada sem o campo
     result = session.execute(f"""
         SELECT column_name FROM system_schema.columns 
         WHERE keyspace_name = '{session.keyspace}' 
         AND table_name = 'produtos_sync'
-        AND column_name = 'extra'
     """)
     
-    assert result.one() is None
+    columns = [row.column_name for row in result]
+    assert 'extra' not in columns, f"Campo 'extra' ainda presente. Colunas: {columns}"
 
 def test_sync_table_preserva_dados(session):
     """Testa se sync_table preserva dados existentes ao adicionar campos."""

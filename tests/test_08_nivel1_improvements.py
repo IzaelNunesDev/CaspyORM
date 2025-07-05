@@ -19,12 +19,12 @@ class UsuarioTeste(Model):
     """Modelo de teste para verificar as melhorias do Nível 1."""
     __table_name__ = 'usuarios_nivel1_teste'
     
-    id: fields.UUID = fields.UUID(primary_key=True)
-    nome: fields.Text = fields.Text(required=True)
-    email: fields.Text = fields.Text(index=True)
-    idade: fields.Integer = fields.Integer()  # Campo não-indexado
-    tags: fields.List = fields.List(fields.Text())  # Coleção
-    configuracoes: fields.Map = fields.Map(fields.Text(), fields.Text())  # Coleção
+    id = fields.UUID(primary_key=True)
+    nome = fields.Text(required=True)
+    email = fields.Text(index=True)
+    idade = fields.Integer()  # Campo não-indexado
+    tags = fields.List(fields.Text())  # Coleção
+    configuracoes = fields.Map(fields.Text(), fields.Text())  # Coleção
 
 
 class TestNivel1Improvements:

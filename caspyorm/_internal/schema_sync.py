@@ -15,25 +15,56 @@ else:
 
 logger = logging.getLogger(__name__)
 
+def _get_cql_type(field_type: str) -> str:
+    """Mapeia tipos Python para tipos CQL."""
+    type_mapping = {
+        'text': 'text',
+        'varchar': 'text',
+        'int': 'int',
+        'bigint': 'bigint',
+        'float': 'float',
+        'double': 'double',
+        'boolean': 'boolean',
+        'uuid': 'uuid',
+        'timestamp': 'timestamp',
+        'date': 'date',
+        'time': 'time',
+        'blob': 'blob',
+        'decimal': 'decimal',
+        'varint': 'int',
+        'inet': 'inet',
+        'list': 'list<text>',
+        'set': 'set<text>',
+        'map': 'map<text, text>',
+        'tuple': 'tuple<text>',
+        'frozen': 'frozen<text>',
+        'counter': 'counter',
+        'duration': 'duration',
+        'smallint': 'int',
+        'tinyint': 'int',
+        'timeuuid': 'uuid',
+        'ascii': 'text',
+        'json': 'text'
+    }
+    base_type = field_type.split('<')[0].split('(')[0].lower()
+    return type_mapping.get(base_type, 'text')
+
 def get_cassandra_table_schema(session: Session, keyspace: str, table_name: str) -> Optional[Dict[str, Any]]:
     """
     Obtém o schema atual de uma tabela no Cassandra.
     Retorna None se a tabela não existir.
     """
     try:
-        # Query para obter informações da tabela
-        query = """
-        SELECT column_name, type, kind
-        FROM system_schema.columns 
-        WHERE keyspace_name = ? AND table_name = ?
-        ORDER BY position
+        # Consulta sem ORDER BY, pois Cassandra não permite ORDER BY em system_schema.columns
+        query = f"""
+            SELECT column_name, kind, type
+            FROM system_schema.columns
+            WHERE keyspace_name = '{keyspace}'
+            AND table_name = '{table_name}'
         """
-        
-        prepared = session.prepare(query)
-        result = session.execute(prepared, (keyspace, table_name))
-        
-        if not result:
-            return None  # Tabela não existe
+        rows = session.execute(query)
+        if not rows:
+            return None
         
         # Estrutura para armazenar o schema
         schema = {
@@ -43,7 +74,7 @@ def get_cassandra_table_schema(session: Session, keyspace: str, table_name: str)
             'clustering_keys': []
         }
         
-        for row in result:
+        for row in rows:
             column_name = row.column_name
             column_type = row.type
             column_kind = row.kind
@@ -112,7 +143,8 @@ def apply_schema_changes(session: Session, table_name: str, model_schema: Dict[s
     # Adicionar novas colunas
     for field_name, field_details in model_schema['fields'].items():
         if field_name not in db_schema['fields']:
-            cql = f"ALTER TABLE {table_name} ADD {field_name} {field_details['type']}"
+            cql_type = _get_cql_type(field_details['type'])
+            cql = f"ALTER TABLE {table_name} ADD {field_name} {cql_type}"
             try:
                 session.execute(cql)
                 logger.info(f"  [+] Executando: {cql}")

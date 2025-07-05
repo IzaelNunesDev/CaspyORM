@@ -19,11 +19,11 @@ def test_create_pydantic_model():
     PydanticUsuario = Usuario.as_pydantic()
     
     # Verifica se o modelo foi criado corretamente
-    assert hasattr(PydanticUsuario, '__fields__')
-    assert 'id' in PydanticUsuario.__fields__
-    assert 'nome' in PydanticUsuario.__fields__
-    assert 'email' in PydanticUsuario.__fields__
-    assert 'ativo' in PydanticUsuario.__fields__
+    assert hasattr(PydanticUsuario, 'model_fields')
+    assert 'id' in PydanticUsuario.model_fields
+    assert 'nome' in PydanticUsuario.model_fields
+    assert 'email' in PydanticUsuario.model_fields
+    assert 'ativo' in PydanticUsuario.model_fields
 
 def test_pydantic_model_validation():
     """Testa a validação de dados com o modelo Pydantic."""
@@ -95,6 +95,7 @@ def test_pydantic_model_com_tipos_especiais():
     dados = {
         'id': user_id,
         'nome': 'Teste',
+        'email': 'teste@email.com',
         'ativo': True
     }
     
@@ -109,7 +110,7 @@ def test_pydantic_model_sem_campos_especiais():
         id = fields.UUID(primary_key=True)
         texto = fields.Text()
     
-    PydanticModelo = create_pydantic_model(ModeloSimples)
+    PydanticModelo = ModeloSimples.as_pydantic()
     
     dados = {'texto': 'Texto simples'}
     modelo = PydanticModelo(**dados)

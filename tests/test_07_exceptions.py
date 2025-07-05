@@ -1,7 +1,17 @@
 import pytest
 import uuid
-from caspyorm import fields, Model
+from caspyorm import fields, Model, connection
 from caspyorm.exceptions import CaspyORMException, ValidationError, ConnectionError
+
+def with_connection(test_func):
+    """Decorator para garantir que a conexão está ativa antes do teste."""
+    def wrapper(*args, **kwargs):
+        try:
+            connection.get_session()
+        except RuntimeError:
+            connection.connect(contact_points=["127.0.0.1"], keyspace="caspyorm_test_suite")
+        return test_func(*args, **kwargs)
+    return wrapper
 
 # Função utilitária para checar conexão
 def cassandra_disponivel():

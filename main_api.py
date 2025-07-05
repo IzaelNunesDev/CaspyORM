@@ -15,9 +15,9 @@ connection.connect(contact_points=['127.0.0.1'], keyspace='caspyorm_api_test')
 
 class Usuario(Model):
     __table_name__ = 'usuarios_api' # Nova tabela para o teste da API
-    id: fields.UUID = fields.UUID(primary_key=True)
-    nome: fields.Text = fields.Text(required=True)
-    email: fields.Text = fields.Text(index=True)
+    id = fields.UUID(primary_key=True)
+    nome = fields.Text(required=True)
+    email = fields.Text(index=True)
 
 # Sincroniza a tabela ao iniciar a aplicação
 Usuario.sync_table()
@@ -58,18 +58,17 @@ def ler_usuario(usuario_id: uuid.UUID):
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return usuario.to_pydantic_model()
 
-@app.get("/usuarios/", response_model=List[Any])
+@app.get("/usuarios/", response_model=List[UsuarioOut])
 def listar_usuarios():
     """
     Lista todos os usuários.
-    (NOTA: `all()` ainda não está totalmente implementado, então pode retornar uma lista vazia
-    ou precisar de um `ALLOW FILTERING` para funcionar no Cassandra.)
     """
-    # Vamos simular por enquanto, já que `all()` não está pronto.
-    # Em uma implementação real, seria:
-    # usuarios = Usuario.all()
-    # return [u.to_pydantic_model() for u in usuarios]
-    raise HTTPException(status_code=501, detail="Listagem de todos os usuários ainda não implementada.")
+    try:
+        usuarios = Usuario.all()
+        return [u.to_pydantic_model() for u in usuarios]
+    except Exception as e:
+        logger.error(f"Erro ao listar usuários: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao listar usuários")
 
 @app.get("/")
 def root():

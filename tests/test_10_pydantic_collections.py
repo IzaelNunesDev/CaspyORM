@@ -4,10 +4,10 @@ from caspyorm._internal.serialization import generate_pydantic_model
 
 class ModeloColecoes(Model):
     __table_name__ = 'colecoes_teste'
-    id: fields.UUID = fields.UUID(primary_key=True)
-    tags: fields.List = fields.List(fields.Text())
-    favoritos: fields.Set = fields.Set(fields.Text())
-    config: fields.Map = fields.Map(fields.Text(), fields.Text())
+    id = fields.UUID(primary_key=True)
+    tags = fields.List(fields.Text())
+    favoritos = fields.Set(fields.Text())
+    config = fields.Map(fields.Text(), fields.Text())
 
 def test_generate_pydantic_model_collections():
     PydModel = generate_pydantic_model(ModeloColecoes)

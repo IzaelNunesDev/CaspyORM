@@ -22,18 +22,20 @@ def cassandra_session():
         connection.connect(contact_points=['127.0.0.1'], keyspace=TEST_KEYSPACE)
         logger.info(f"Conectado ao Cassandra no keyspace de teste '{TEST_KEYSPACE}'")
         
+        # Garante que a conexão está ativa
+        session = connection.get_session()
+        
         # 'yield' passa o controle para os testes
-        yield connection.get_session()
+        yield session
         
     finally:
         # Limpeza após a execução de todos os testes
         logger.info(f"Limpando o keyspace de teste '{TEST_KEYSPACE}'...")
         try:
-            if hasattr(connection, 'is_connected') and connection.is_connected:
-                # Opcional: Apagar o keyspace de teste para um ambiente 100% limpo na próxima execução
-                # connection.execute(f"DROP KEYSPACE IF EXISTS {TEST_KEYSPACE}")
-                connection.disconnect()
-                logger.info("Desconectado do Cassandra.")
+            # Opcional: Apagar o keyspace de teste para um ambiente 100% limpo na próxima execução
+            # connection.execute(f"DROP KEYSPACE IF EXISTS {TEST_KEYSPACE}")
+            connection.disconnect()
+            logger.info("Desconectado do Cassandra.")
         except:
             pass  # Ignora erros de desconexão
 

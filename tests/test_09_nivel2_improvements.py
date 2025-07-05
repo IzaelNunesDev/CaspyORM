@@ -9,9 +9,9 @@ from caspyorm import connection
 class UsuarioPaginacao(Model):
     __table_name__ = 'usuarios_paginacao_teste'
     grupo: fields.Text = fields.Text(partition_key=True)
-    id: fields.UUID = fields.UUID(primary_key=True)
-    nome: fields.Text = fields.Text(required=True)
-    email: fields.Text = fields.Text(index=True)
+    id = fields.UUID(primary_key=True)
+    nome = fields.Text(required=True)
+    email = fields.Text(index=True)
 
 @pytest.fixture(scope="function")
 def setup_usuarios(session):

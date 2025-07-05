@@ -131,7 +131,7 @@ class ConnectionManager:
         Retorna a sessão ativa do Cassandra.
         Garante que a conexão foi estabelecida.
         """
-        if not self.session:
+        if not self.session or not self._is_connected:
             raise RuntimeError("A conexão com o Cassandra não foi estabelecida. Chame `connection.connect()` primeiro.")
         return self.session
 
