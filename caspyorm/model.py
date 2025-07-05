@@ -68,6 +68,17 @@ class Model(metaclass=ModelMetaclass):
         save_instance(self)
         return self
 
+    async def save_async(self) -> Self:
+        """Salva (insere ou atualiza) a instância no Cassandra (assíncrono)."""
+        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao salvar.
+        for pk_name in self.__caspy_schema__['primary_keys']:
+            if getattr(self, pk_name, None) is None:
+                raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
+        
+        # TODO: Implementar save_instance_async
+        save_instance(self)
+        return self
+
     def update(self, **kwargs: Any) -> Self:
         """
         Atualiza parcialmente esta instância no banco de dados.
@@ -118,10 +129,67 @@ class Model(metaclass=ModelMetaclass):
         
         return self
 
+    async def update_async(self, **kwargs: Any) -> Self:
+        """
+        Atualiza parcialmente esta instância no banco de dados (assíncrono).
+        Diferente de save_async(), que faz um upsert completo, update_async() gera
+        uma query UPDATE específica apenas para os campos fornecidos.
+        """
+        if not kwargs:
+            logger.warning("update_async() chamado sem campos para atualizar")
+            return self
+        
+        # Validar e converter os valores
+        validated_data = {}
+        for key, value in kwargs.items():
+            if key not in self.model_fields:
+                raise ValidationError(f"Campo '{key}' não existe no modelo {self.__class__.__name__}")
+            
+            field_obj = self.model_fields[key]
+            if value is not None:
+                try:
+                    validated_value = field_obj.to_python(value)
+                    validated_data[key] = validated_value
+                    # Atualizar o atributo da instância
+                    setattr(self, key, validated_value)
+                except (TypeError, ValueError) as e:
+                    raise ValidationError(f"Valor inválido para campo '{key}': {e}")
+        
+        if not validated_data:
+            logger.warning("Nenhum campo válido fornecido para update_async()")
+            return self
+        
+        # Gerar e executar query UPDATE
+        from ._internal.query_builder import build_update_cql
+        cql, params = build_update_cql(
+            self.__caspy_schema__,
+            update_data=validated_data,
+            pk_filters={pk: getattr(self, pk) for pk in self.__caspy_schema__['primary_keys']}
+        )
+        
+        try:
+            from .connection import get_async_session
+            session = get_async_session()
+            prepared = session.prepare(cql)
+            session.execute_async(prepared, params).result()
+            logger.info(f"Instância atualizada (ASSÍNCRONO): {self.__class__.__name__} com campos: {list(validated_data.keys())}")
+        except Exception as e:
+            logger.error(f"Erro ao atualizar instância (async): {e}")
+            raise
+        
+        return self
+
     @classmethod
     def create(cls, **kwargs: Any) -> Self:
         instance = cls(**kwargs)
         instance.save()
+        return instance
+
+    @classmethod
+    async def create_async(cls, **kwargs: Any) -> Self:
+        """Cria uma nova instância e a salva no banco de dados (assíncrono)."""
+        instance = cls(**kwargs)
+        await instance.save_async()
         return instance
 
     @classmethod
@@ -138,10 +206,29 @@ class Model(metaclass=ModelMetaclass):
         return QuerySet(cls).bulk_create(instances)
 
     @classmethod
+    async def bulk_create_async(cls, instances: List["Model"]) -> List["Model"]:
+        """
+        Insere uma lista de instâncias de modelo em lote usando um UNLOGGED BATCH
+        para máxima performance (assíncrono). As instâncias são modificadas no local.
+        Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
+        """
+        if not instances:
+            return []
+        
+        # TODO: Implementar bulk_create_async no QuerySet
+        return QuerySet(cls).bulk_create(instances)
+
+    @classmethod
     def get(cls, **kwargs: Any) -> Optional["Model"]:
         """Busca um único registro."""
         # A lógica foi movida para query.py, que usa o QuerySet
         return get_one(cls, **kwargs)
+
+    @classmethod
+    async def get_async(cls, **kwargs: Any) -> Optional["Model"]:
+        """Busca um único registro (assíncrono)."""
+        from .query import get_one_async
+        return await get_one_async(cls, **kwargs)
 
     @classmethod
     def filter(cls, **kwargs: Any) -> QuerySet:
@@ -169,6 +256,12 @@ class Model(metaclass=ModelMetaclass):
     def sync_table(cls, auto_apply: bool = False, verbose: bool = True):
         sync_table(cls, auto_apply=auto_apply, verbose=verbose)
 
+    @classmethod
+    async def sync_table_async(cls, auto_apply: bool = False, verbose: bool = True):
+        """Sincroniza o schema da tabela (assíncrono)."""
+        # TODO: Implementar sync_table_async
+        sync_table(cls, auto_apply=auto_apply, verbose=verbose)
+
     def __repr__(self) -> str:
         attrs = ", ".join(f"{k}={getattr(self, k)!r}" for k in self.model_fields)
         return f"{self.__class__.__name__}({attrs})"
@@ -191,6 +284,24 @@ class Model(metaclass=ModelMetaclass):
         QuerySet(self.__class__).filter(**pk_filters).delete()
         logger.info(f"Instância deletada: {self}")
 
+    async def delete_async(self) -> None:
+        """Deleta esta instância específica do banco de dados (assíncrono)."""
+        pk_fields = self.__caspy_schema__['primary_keys']
+        if not pk_fields:
+            raise RuntimeError("Não é possível deletar um modelo sem chave primária.")
+        
+        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao deletar.
+        pk_filters = {}
+        for field in pk_fields:
+            value = getattr(self, field, None)
+            if value is None:
+                raise ValidationError(f"Primary key '{field}' is required to delete, but was None.")
+            pk_filters[field] = value
+        
+        from .query import QuerySet
+        await QuerySet(self.__class__).filter(**pk_filters).delete_async()
+        logger.info(f"Instância deletada (ASSÍNCRONO): {self}")
+
     def update_collection(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
         """
         Atualiza atomicamente um campo de coleção (List, Set) no banco de dados.
@@ -199,6 +310,12 @@ class Model(metaclass=ModelMetaclass):
             field_name (str): O nome do campo da coleção a ser atualizado.
             add (list | set): Itens para adicionar à coleção.
             remove (list | set): Itens para remover da coleção.
+
+        Returns:
+            Self: A instância atualizada.
+
+        Raises:
+            ValidationError: Se o campo não existe ou não é uma coleção.
         """
         if field_name not in self.model_fields:
             raise ValidationError(f"Campo '{field_name}' não existe no modelo {self.__class__.__name__}")
@@ -221,3 +338,21 @@ class Model(metaclass=ModelMetaclass):
             logger.error(f"Erro ao atualizar coleção: {e}")
             raise
         return self
+
+    async def update_collection_async(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
+        """
+        Atualiza atomicamente um campo de coleção (List, Set) no banco de dados (assíncrono).
+
+        Args:
+            field_name (str): O nome do campo da coleção a ser atualizado.
+            add (list | set): Itens para adicionar à coleção.
+            remove (list | set): Itens para remover da coleção.
+
+        Returns:
+            Self: A instância atualizada.
+
+        Raises:
+            ValidationError: Se o campo não existe ou não é uma coleção.
+        """
+        # TODO: Implementar update_collection_async
+        return self.update_collection(field_name, add, remove)

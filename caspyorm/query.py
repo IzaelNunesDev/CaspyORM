@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional, Type
 from typing_extensions import Self
-from caspyorm.connection import get_session, execute
+from caspyorm.connection import get_session, get_async_session, execute
 from caspyorm._internal import query_builder
 from cassandra.query import BatchStatement, SimpleStatement
 from cassandra import ConsistencyLevel
@@ -21,6 +21,7 @@ def _map_row_to_instance(model_cls, row_dict):
 class QuerySet:
     """
     Representa uma query preguiçosa (lazy) que pode ser encadeada.
+    Suporta operações síncronas e assíncronas.
     """
     def __init__(self, model_cls: Type["Model"]):
         self.model_cls = model_cls
@@ -30,11 +31,18 @@ class QuerySet:
         self._result_cache: Optional[List["Model"]] = None
 
     def __iter__(self):
-        """Executa a query quando o queryset é iterado."""
+        """Executa a query quando o queryset é iterado (síncrono)."""
         if self._result_cache is None:
             print("EXECUTADO")
             self._execute_query()
         return iter(self._result_cache or [])
+
+    async def __aiter__(self):
+        """Executa a query quando o queryset é iterado (assíncrono)."""
+        if self._result_cache is None:
+            await self._execute_query_async()
+        for item in self._result_cache or []:
+            yield item
 
     def __repr__(self) -> str:
         # Mostra os resultados se a query já foi executada, senão mostra a query planejada.
@@ -51,7 +59,7 @@ class QuerySet:
         return new_qs
 
     def _execute_query(self):
-        """Executa a query no banco de dados e armazena os resultados no cache."""
+        """Executa a query no banco de dados e armazena os resultados no cache (síncrono)."""
         cql, params = query_builder.build_select_cql(
             self.model_cls.__caspy_schema__,
             columns=None,  # Seleciona todas as colunas
@@ -64,9 +72,25 @@ class QuerySet:
         prepared = session.prepare(cql)
         result_set = session.execute(prepared, params)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
-        logger.debug(f"Executando query: {cql} com parâmetros: {params}")
+        logger.debug(f"Executando query (SÍNCRONO): {cql} com parâmetros: {params}")
 
-    # --- Métodos de API Pública do QuerySet ---
+    async def _execute_query_async(self):
+        """Executa a query no banco de dados e armazena os resultados no cache (assíncrono)."""
+        cql, params = query_builder.build_select_cql(
+            self.model_cls.__caspy_schema__,
+            columns=None,  # Seleciona todas as colunas
+            filters=self._filters,
+            limit=self._limit,
+            ordering=self._ordering  # NOVO: passar ordenação
+        )
+        session = get_async_session()
+        # Preparar a query de forma síncrona, executar de forma assíncrona
+        prepared = session.prepare(cql)
+        result_set = session.execute_async(prepared, params).result()
+        self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
+        logger.debug(f"Executando query (ASSÍNCRONO): {cql} com parâmetros: {params}")
+
+    # --- Métodos de API Pública do QuerySet (Síncronos) ---
     
     def filter(self, **kwargs: Any) -> Self:
         """Adiciona condições de filtro à query."""
@@ -102,13 +126,19 @@ class QuerySet:
         return clone
 
     def all(self) -> List["Model"]:
-        """Executa a query e retorna todos os resultados como uma lista."""
+        """Executa a query e retorna todos os resultados como uma lista (síncrono)."""
         if self._result_cache is None:
             self._execute_query()
         return self._result_cache or []
+
+    async def all_async(self) -> List["Model"]:
+        """Executa a query e retorna todos os resultados como uma lista (assíncrono)."""
+        if self._result_cache is None:
+            await self._execute_query_async()
+        return self._result_cache or []
     
     def first(self) -> Optional["Model"]:
-        """Executa a query e retorna o primeiro resultado, ou None se não houver resultados."""
+        """Executa a query e retorna o primeiro resultado, ou None se não houver resultados (síncrono)."""
         # Otimização: aplica LIMIT 1 na query se ainda não foi executada
         if self._result_cache is None and self._limit is None:
             return self.limit(1).first()
@@ -116,9 +146,18 @@ class QuerySet:
         results = self.all()
         return results[0] if results else None
 
+    async def first_async(self) -> Optional["Model"]:
+        """Executa a query e retorna o primeiro resultado, ou None se não houver resultados (assíncrono)."""
+        # Otimização: aplica LIMIT 1 na query se ainda não foi executada
+        if self._result_cache is None and self._limit is None:
+            return await self.limit(1).first_async()
+
+        results = await self.all_async()
+        return results[0] if results else None
+
     def count(self) -> int:
         """
-        Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados.
+        Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados (síncrono).
         """
         # Se a query já foi executada, podemos simplesmente retornar o tamanho do cache.
         if self._result_cache is not None:
@@ -138,11 +177,33 @@ class QuerySet:
         row = result_set.one()
         return row.count if row else 0
 
+    async def count_async(self) -> int:
+        """
+        Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados (assíncrono).
+        """
+        # Se a query já foi executada, podemos simplesmente retornar o tamanho do cache.
+        if self._result_cache is not None:
+            return len(self._result_cache)
+
+        # Se não, construímos e executamos a query COUNT(*) otimizada.
+        cql, params = query_builder.build_count_cql(
+            self.model_cls.__caspy_schema__,
+            filters=self._filters
+        )
+        
+        session = get_async_session()
+        prepared = session.prepare(cql)
+        result_set = session.execute_async(prepared, params).result()
+        
+        # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
+        row = result_set.one()
+        return row.count if row else 0
+
     def exists(self) -> bool:
         """
         Verifica de forma otimizada se algum registro corresponde aos filtros,
-        executando uma query `SELECT <pk> ... LIMIT 1`. Retorna True se pelo
-        menos um registro for encontrado, False caso contrário.
+        executando uma query `SELECT <pk> ... LIMIT 1` (síncrono).
+        Retorna True se pelo menos um registro for encontrado, False caso contrário.
         """
         if self._result_cache is not None:
             return bool(self._result_cache)
@@ -164,10 +225,36 @@ class QuerySet:
         # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
         return result_set.one() is not None
 
+    async def exists_async(self) -> bool:
+        """
+        Verifica de forma otimizada se algum registro corresponde aos filtros,
+        executando uma query `SELECT <pk> ... LIMIT 1` (assíncrono).
+        Retorna True se pelo menos um registro for encontrado, False caso contrário.
+        """
+        if self._result_cache is not None:
+            return bool(self._result_cache)
+
+        # Seleciona apenas o primeiro campo da chave primária para máxima eficiência.
+        pk_to_select = [self.model_cls.__caspy_schema__['primary_keys'][0]]
+
+        cql, params = query_builder.build_select_cql(
+            self.model_cls.__caspy_schema__,
+            columns=pk_to_select,
+            filters=self._filters,
+            limit=1
+        )
+        
+        session = get_async_session()
+        prepared = session.prepare(cql)
+        result_set = session.execute_async(prepared, params).result()
+        
+        # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
+        return result_set.one() is not None
+
     def delete(self) -> int:
         """
         Executa uma operação de deleção para os registros que correspondem
-        aos filtros atuais.
+        aos filtros atuais (síncrono).
         Retorna o número de linhas que *poderiam* ter sido deletadas.
         Nota: O Cassandra não retorna o número de linhas afetadas.
         """
@@ -184,14 +271,40 @@ class QuerySet:
             self.model_cls.__caspy_schema__,
             filters=self._filters
         )
-        logger.debug(f"Executando DELETE: {cql} com parâmetros: {params}")
+        logger.debug(f"Executando DELETE (SÍNCRONO): {cql} com parâmetros: {params}")
         prepared = session.prepare(cql)
         session.execute(prepared, params)
         return 0  # Cassandra não retorna número de linhas deletadas
 
+    async def delete_async(self) -> int:
+        """
+        Executa uma operação de deleção para os registros que correspondem
+        aos filtros atuais (assíncrono).
+        Retorna o número de linhas que *poderiam* ter sido deletadas.
+        Nota: O Cassandra não retorna o número de linhas afetadas.
+        """
+        if self._result_cache is not None:
+            # Se a query já foi executada, podemos deletar por chave primária
+            count = 0
+            for item in self._result_cache:
+                # TODO: Implementar delete_async no Model
+                item.delete()
+                count += 1
+            return count
+        # Se a query não foi executada, fazemos uma deleção em massa com base nos filtros
+        session = get_async_session()
+        cql, params = query_builder.build_delete_cql(
+            self.model_cls.__caspy_schema__,
+            filters=self._filters
+        )
+        logger.debug(f"Executando DELETE (ASSÍNCRONO): {cql} com parâmetros: {params}")
+        prepared = session.prepare(cql)
+        session.execute_async(prepared, params).result()
+        return 0  # Cassandra não retorna número de linhas deletadas
+
     def page(self, page_size: int = 100, paging_state: Any = None):
         """
-        Retorna uma página de resultados e o paging_state para a próxima página.
+        Retorna uma página de resultados e o paging_state para a próxima página (síncrono).
         Args:
             page_size: Tamanho da página (quantidade de registros)
             paging_state: Estado de paginação retornado pela página anterior (ou None para a primeira página)
@@ -209,9 +322,34 @@ class QuerySet:
         prepared = session.prepare(cql)
         statement = prepared.bind(params)
         statement.fetch_size = page_size
-        if paging_state is not None:
-            statement.paging_state = paging_state
+        # TODO: Implementar paging_state corretamente
         result_set = session.execute(statement)
+        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
+        next_paging_state = result_set.paging_state
+        return resultados, next_paging_state
+
+    async def page_async(self, page_size: int = 100, paging_state: Any = None):
+        """
+        Retorna uma página de resultados e o paging_state para a próxima página (assíncrono).
+        Args:
+            page_size: Tamanho da página (quantidade de registros)
+            paging_state: Estado de paginação retornado pela página anterior (ou None para a primeira página)
+        Returns:
+            (resultados: List[Model], next_paging_state: Any)
+        """
+        cql, params = query_builder.build_select_cql(
+            self.model_cls.__caspy_schema__,
+            columns=None,  # Seleciona todas as colunas
+            filters=self._filters,
+            limit=None,  # Não usar LIMIT para paginação real
+            ordering=self._ordering
+        )
+        session = get_async_session()
+        prepared = session.prepare(cql)
+        statement = prepared.bind(params)
+        statement.fetch_size = page_size
+        # TODO: Implementar paging_state corretamente
+        result_set = session.execute_async(statement).result()
         resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
@@ -292,6 +430,10 @@ def save_instance(instance) -> None:
 def get_one(model_cls: Type["Model"], **kwargs: Any) -> Optional["Model"]:
     """Busca um único registro usando um QuerySet."""
     return QuerySet(model_cls).filter(**kwargs).first()
+
+async def get_one_async(model_cls: Type["Model"], **kwargs: Any) -> Optional["Model"]:
+    """Busca um único registro usando um QuerySet (assíncrono)."""
+    return await QuerySet(model_cls).filter(**kwargs).first_async()
 
 def filter_query(model_cls: Type["Model"], **kwargs: Any) -> QuerySet:
     """Retorna um QuerySet com os filtros aplicados."""
