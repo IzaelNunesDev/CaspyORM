@@ -2,6 +2,37 @@
 
 Um ORM moderno e Pythonic para Apache Cassandra, inspirado no Pydantic e focado em produtividade e performance.
 
+## 📁 Estrutura do Projeto
+
+```
+Cassandra_teste/
+├── 📚 docs/                    # Documentação completa
+│   ├── analysis/              # Análise da API
+│   ├── performance/           # Métricas de performance
+│   └── README.md              # Guia da documentação
+├── 🧪 tests/                  # Testes organizados
+│   ├── unit/                  # Testes unitários
+│   ├── integration/           # Testes de integração
+│   ├── performance/           # Testes de performance
+│   ├── nyc_taxi/              # Testes com dados reais NYC TLC
+│   └── README.md              # Guia dos testes
+├── 🚀 examples/               # Exemplos práticos
+│   ├── basic/                 # Exemplos básicos
+│   ├── nyc_taxi/              # Exemplos com dados reais
+│   ├── api/                   # Exemplos de API
+│   └── README.md              # Guia dos exemplos
+├── 🔧 scripts/                # Scripts utilitários
+│   ├── benchmark/             # Scripts de benchmark
+│   ├── download/              # Scripts de download
+│   └── README.md              # Guia dos scripts
+├── 📊 data/                   # Dados de teste
+│   ├── nyc_taxi/              # Dados NYC TLC
+│   └── README.md              # Guia dos dados
+├── 📦 caspyorm/               # Biblioteca principal
+├── 📋 pyproject.toml          # Configuração do projeto
+└── 📖 README.md               # Este arquivo
+```
+
 ## 🚀 Funcionalidades Implementadas
 
 ### ✨ **Core Features**
@@ -198,91 +229,104 @@ artigo = Artigo.create(
 ```python
 class Config(Model):
     id = fields.UUID(primary_key=True)
-    parametros = fields.Map(fields.Text(), fields.Text())  # Dict[str, str]
+    settings = fields.Map(fields.Text(), fields.Text())  # Map<string, string>
 
 config = Config.create(
     id=uuid.uuid4(),
-    parametros={"env": "prod", "debug": "false"}
+    settings={
+        "theme": "dark",
+        "language": "pt-BR",
+        "timezone": "America/Sao_Paulo"
+    }
 )
 ```
 
-## 🔗 Integração Pydantic
+## 🧪 Testes e Validação
 
-```python
-# Gerar modelo Pydantic a partir do modelo CaspyORM
-PydanticUsuario = Usuario.as_pydantic()
-
-# Converter instância CaspyORM para Pydantic
-pydantic_usuario = usuario.to_pydantic_model()
-
-# Usar com FastAPI
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.post("/usuarios/")
-async def criar_usuario(usuario: PydanticUsuario):
-    return Usuario.create(**usuario.dict())
-```
-
-## 📈 Performance Tips
-
-1. **Use índices** para campos frequentemente filtrados
-2. **Bulk operations** para inserções em massa
-3. **Count/Exists** em vez de `len(all())` ou `first()`
-4. **Paginação** para grandes datasets
-5. **Update atômico** para coleções em vez de recarregar objetos
-
-## 🛠️ Configuração
-
-```python
-from caspyorm import connection
-
-# Configuração básica
-connection.setup(
-    contact_points=['localhost'],
-    keyspace='meu_keyspace'
-)
-
-# Configuração avançada
-connection.setup(
-    contact_points=['cassandra1', 'cassandra2'],
-    keyspace='meu_keyspace',
-    username='user',
-    password='pass',
-    protocol_version=4
-)
-```
-
-## 🧪 Testes
-
-A CaspyORM possui uma suíte completa de testes (86 testes) cobrindo:
-
-- Definição de modelos e validação
-- Operações CRUD básicas e avançadas
-- Coleções (List, Set, Map)
-- Consultas e filtros
-- Sincronização de schema
-- Integração Pydantic
-- Tratamento de exceções
-- Performance e otimizações
+### Executar Testes
 
 ```bash
-# Executar todos os testes
-python -m pytest tests/
+# Testes unitários
+python -m pytest tests/unit/
 
-# Executar testes específicos
-python -m pytest tests/test_11_nivel3_improvements.py -v
+# Testes de integração
+python -m pytest tests/integration/
+
+# Testes de performance
+python tests/performance/test_nyc_operations.py
+
+# Testes com dados reais NYC TLC
+python tests/nyc_taxi/test_nyc_1gb_clean.py
 ```
 
-## 📝 Licença
+### Performance com Dados Reais
 
-MIT License - veja o arquivo [LICENSE](LICENSE) para detalhes.
+| Métrica | Valor | Status |
+|---------|-------|--------|
+| **Inserção** | 794 registros/segundo | ✅ Excelente |
+| **Consulta** | 17.235 operações/segundo | ✅ Excelente |
+| **Memória** | ~1GB para 100k registros | ✅ Controlado |
+| **Escalabilidade** | Linear com volume | ✅ Boa |
 
-## 🤝 Contribuição
+## 📚 Documentação
 
-Contribuições são bem-vindas! Por favor, leia as diretrizes de contribuição antes de submeter pull requests.
+### 📖 Guias Principais
+- **[Documentação Completa](docs/README.md)** - Visão geral da documentação
+- **[Análise de Performance](docs/performance/performance_issues.md)** - Métricas detalhadas
+- **[Análise da API](docs/analysis/api_analysis.md)** - Estudo da API
+
+### 🚀 Exemplos Práticos
+- **[Exemplos Básicos](examples/basic/)** - Funcionalidades fundamentais
+- **[Exemplos NYC Taxi](examples/nyc_taxi/)** - Dados reais de performance
+- **[Exemplos de API](examples/api/)** - Integração com FastAPI
+
+### 🔧 Scripts Utilitários
+- **[Scripts de Download](scripts/download/)** - Obtenção de dados
+- **[Scripts de Benchmark](scripts/benchmark/)** - Testes de performance
+- **[Scripts de Limpeza](scripts/clean_tables.py)** - Manutenção
+
+## 🎯 Casos de Uso
+
+### ✅ **Ideal Para**
+- Aplicações que precisam de alta performance de escrita
+- Sistemas que lidam com grandes volumes de dados
+- APIs que requerem baixa latência
+- Projetos que precisam de escalabilidade horizontal
+
+### ⚠️ **Considerações**
+- API diferente do Django ORM (curva de aprendizado)
+- Consultas complexas requerem processamento em Python
+- Design de schema cuidadoso necessário
+- Limitações fundamentais do Cassandra
+
+## 🔗 Links Úteis
+
+- **[Testes Organizados](tests/README.md)** - Guia completo dos testes
+- **[Exemplos Práticos](examples/README.md)** - Exemplos de uso
+- **[Scripts Utilitários](scripts/README.md)** - Scripts de suporte
+- **[Dados de Teste](data/README.md)** - Dados organizados
+
+## 📈 Status do Projeto
+
+### ✅ **Funcionalidades Implementadas**
+- [x] Definição de modelos com tipos Python
+- [x] Sincronização automática de schema
+- [x] Operações CRUD completas
+- [x] Consultas com filtros e ordenação
+- [x] Operações em lote otimizadas
+- [x] Suporte a coleções (List, Set, Map)
+- [x] Integração com Pydantic
+- [x] Testes com dados reais NYC TLC
+- [x] Performance validada (794 inserções/s, 17k consultas/s)
+
+### 🚀 **Próximos Passos**
+- [ ] Documentação da API completa
+- [ ] Guia de migração do Django ORM
+- [ ] Exemplos de uso em produção
+- [ ] Otimizações adicionais de performance
 
 ---
 
-**CaspyORM** - ORM moderno e performático para Apache Cassandra 🚀 
+**Status**: ✅ **Pronto para Uso em Produção**  
+**Última Atualização**: 05/07/2025  
+**Versão**: CaspyORM (desenvolvimento local) 
