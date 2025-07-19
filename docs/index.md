@@ -20,11 +20,11 @@ pip install caspyorm
 ## 🔧 Configuração Rápida
 
 ```python
-from caspyorm import Model, connect
+from caspyorm import Model, connection
 from caspyorm.fields import Text, Integer, UUID
 
 # Conectar ao Cassandra
-connect(contact_points=['localhost'], keyspace='my_keyspace')
+connection.connect(contact_points=['localhost'], keyspace='my_keyspace')
 
 # Definir modelo
 class User(Model):

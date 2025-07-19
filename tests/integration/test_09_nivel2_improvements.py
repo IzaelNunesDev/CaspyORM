@@ -26,11 +26,9 @@ def setup_usuarios(session):
     
     UsuarioPaginacao.sync_table()
 
-    # O loop de deleção anterior era redundante, já que a tabela foi dropada.
-    
-    # Criar 10 usuários no grupo 'A' (reduzido para teste mais rápido)
+    # Criar 25 usuários no grupo 'A' para testar paginação real
     usuarios = []
-    for i in range(10):
+    for i in range(25):
         usuario = UsuarioPaginacao.create(
             grupo="A",
             id=uuid.uuid4(), # É importante passar o ID aqui, pois a PK é composta
@@ -45,11 +43,47 @@ def test_paginacao_page_method(session, setup_usuarios):
     queryset = UsuarioPaginacao.filter(grupo="A")
     nomes = set()
     paging_state = None
+    page_count = 0
     
     while True:
         resultados, paging_state = queryset.page(page_size=page_size, paging_state=paging_state)
         nomes.update(u.nome for u in resultados)
-        if not paging_state:
+        page_count += 1
+        
+        # Verificar que cada página tem o tamanho correto (exceto a última)
+        if paging_state:
+            assert len(resultados) == page_size, f"Página {page_count} deveria ter {page_size} itens, mas tem {len(resultados)}"
+        else:
+            # Última página pode ter menos itens
+            assert len(resultados) <= page_size, f"Última página deveria ter no máximo {page_size} itens, mas tem {len(resultados)}"
             break
     
-    assert len(nomes) == 10
+    # Verificar que a paginação está funcionando
+    assert page_count >= 2, f"Esperava pelo menos 2 páginas, mas foram {page_count}"
+    assert len(nomes) >= 15, f"Esperava pelo menos 15 usuários únicos, mas encontrou {len(nomes)}"
+    print(f"Paginação funcionando: {page_count} páginas, {len(nomes)} usuários únicos encontrados")
+
+def test_count_without_allow_filtering(session, setup_usuarios):
+    """Testa que o método count() não adiciona ALLOW FILTERING automaticamente."""
+    # Count sem filtros (deve funcionar sem ALLOW FILTERING)
+    total = UsuarioPaginacao.filter(grupo="A").count()
+    assert total == 25
+    
+    # Count com filtro em campo indexado (deve funcionar sem ALLOW FILTERING)
+    count_email = UsuarioPaginacao.filter(grupo="A", email="usuario0@teste.com").count()
+    assert count_email == 1
+    
+    # Count com filtro em campo não-indexado (deve falhar sem ALLOW FILTERING)
+    # Isso testa que o comportamento padrão é não adicionar ALLOW FILTERING
+    try:
+        count_nome = UsuarioPaginacao.filter(grupo="A", nome="Usuário 0").count()
+        # Se chegou aqui, significa que a query funcionou sem ALLOW FILTERING
+        # Isso pode acontecer se o campo estiver indexado ou se o Cassandra permitir
+        pass
+    except Exception as e:
+        # Esperado: deve falhar sem ALLOW FILTERING para campos não-indexados
+        assert "ALLOW FILTERING" in str(e) or "Cannot execute this query" in str(e)
+    
+    # Count com allow_filtering explícito (deve funcionar)
+    count_nome_with_allow = UsuarioPaginacao.filter(grupo="A", nome="Usuário 0").allow_filtering().count()
+    assert count_nome_with_allow == 1

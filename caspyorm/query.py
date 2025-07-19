@@ -181,7 +181,8 @@ class QuerySet:
         # Se não, construímos e executamos a query COUNT(*) otimizada.
         cql, params = query_builder.build_count_cql(
             self.model_cls.__caspy_schema__,
-            filters=self._filters
+            filters=self._filters,
+            allow_filtering=self._allow_filtering
         )
         
         session = get_session()
@@ -203,7 +204,8 @@ class QuerySet:
         # Se não, construímos e executamos a query COUNT(*) otimizada.
         cql, params = query_builder.build_count_cql(
             self.model_cls.__caspy_schema__,
-            filters=self._filters
+            filters=self._filters,
+            allow_filtering=self._allow_filtering
         )
         
         session = get_async_session()
@@ -343,15 +345,14 @@ class QuerySet:
         prepared = session.prepare(cql)
         statement = prepared.bind(params)
         statement.fetch_size = page_size
-        result_set = session.execute(statement)
         
-        # Se temos um paging_state, precisamos pular os resultados anteriores
+        # CORRIGIDO: Aplicar paging_state se fornecido
         if paging_state is not None:
-            # Para implementação futura: usar paging_state diretamente
-            # Por enquanto, vamos usar uma abordagem mais simples
-            pass
-            
-        # Limitar os resultados ao page_size
+            result_set = session.execute(statement, paging_state=paging_state)
+        else:
+            result_set = session.execute(statement)
+        
+        # Processar apenas os resultados da página atual (limitado pelo fetch_size)
         resultados = []
         for i, row in enumerate(result_set):
             if i >= page_size:
@@ -384,16 +385,15 @@ class QuerySet:
         prepared = session.prepare(cql)
         statement = prepared.bind(params)
         statement.fetch_size = page_size
-        future = session.execute_async(statement)
+        
+        # CORRIGIDO: Aplicar paging_state se fornecido
+        if paging_state is not None:
+            future = session.execute_async(statement, paging_state=paging_state)
+        else:
+            future = session.execute_async(statement)
         result_set = await asyncio.wrap_future(future)
         
-        # Se temos um paging_state, precisamos pular os resultados anteriores
-        if paging_state is not None:
-            # Para implementação futura: usar paging_state diretamente
-            # Por enquanto, vamos usar uma abordagem mais simples
-            pass
-            
-        # Limitar os resultados ao page_size
+        # Processar apenas os resultados da página atual (limitado pelo fetch_size)
         resultados = []
         for i, row in enumerate(result_set):
             if i >= page_size:

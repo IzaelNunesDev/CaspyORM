@@ -156,7 +156,7 @@ def _get_cql_type(field_type: str) -> str:
     
     return type_mapping.get(field_type, 'text')
 
-def build_count_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = None) -> Tuple[str, List[Any]]:
+def build_count_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = None, allow_filtering: bool = False) -> Tuple[str, List[Any]]:
     """Constrói uma query SELECT COUNT(*) ... WHERE."""
     table_name = schema['table_name']
     
@@ -198,7 +198,10 @@ def build_count_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = 
                 params.append(value)
         
         cql += " WHERE " + " AND ".join(where_clauses)
-        cql += " ALLOW FILTERING"  # Necessário para filtros em campos não-PK
+
+    # Adicionar ALLOW FILTERING apenas se explicitamente solicitado
+    if allow_filtering:
+        cql += " ALLOW FILTERING"
 
     logger.debug(f"Query COUNT gerada: {cql} com parâmetros: {params}")
     

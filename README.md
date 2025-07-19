@@ -53,7 +53,7 @@ from caspyorm import Model, fields, connection
 import uuid
 
 # Configurar conexão
-connection.setup(['localhost'], 'meu_keyspace')
+connection.connect(['localhost'], keyspace='meu_keyspace')
 
 class Usuario(Model):
     __table_name__ = 'usuarios'
@@ -99,7 +99,7 @@ Usuario.bulk_create(usuarios)
 import asyncio
 
 # Conexão assíncrona
-await connection.connect_async(['localhost'], 'meu_keyspace')
+await connection.connect_async(['localhost'], keyspace='meu_keyspace')
 
 # CRUD assíncrono
 usuario = await Usuario.create_async(
