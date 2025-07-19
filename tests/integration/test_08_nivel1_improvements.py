@@ -64,7 +64,7 @@ class TestNivel1Improvements:
             warnings.simplefilter("always")
             
             # Filtrar por campo não-indexado (deve gerar warning)
-            usuarios = UsuarioTeste.filter(idade=25)
+            usuarios = UsuarioTeste.filter(idade=25).allow_filtering()
             list(usuarios)  # Executar a query
             
             # Verificar se o warning foi emitido

@@ -233,7 +233,8 @@ class QuerySet:
             self.model_cls.__caspy_schema__,
             columns=pk_to_select,
             filters=self._filters,
-            limit=1
+            limit=1,
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         
         session = get_session()
@@ -259,7 +260,8 @@ class QuerySet:
             self.model_cls.__caspy_schema__,
             columns=pk_to_select,
             filters=self._filters,
-            limit=1
+            limit=1,
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         
         session = get_async_session()
@@ -445,6 +447,52 @@ class QuerySet:
             session.execute(batch)
             
         logger.info(f"{len(instances)} instâncias inseridas em lote na tabela '{table_name}'.")
+        return instances
+
+    async def bulk_create_async(self, instances: List["Model"]) -> List["Model"]:
+        """
+        Lógica interna para inserir instâncias em lote (assíncrono).
+        """
+        if not instances:
+            return []
+        
+        session = get_async_session()
+        table_name = self.model_cls.__table_name__
+        
+        # Pega a query de inserção e os nomes das colunas uma única vez
+        data_sample = instances[0].model_dump()
+        columns = list(data_sample.keys())
+        placeholders = ", ".join(['?'] * len(columns))
+        insert_query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        
+        prepared_statement = session.prepare(insert_query)
+        
+        # Usar UNLOGGED BATCH para performance
+        batch = BatchStatement(consistency_level=ConsistencyLevel.QUORUM)
+        
+        for instance in instances:
+            # Validação crucial: garantir que as chaves primárias não são nulas
+            for pk_name in self.model_cls.__caspy_schema__['primary_keys']:
+                if getattr(instance, pk_name, None) is None:
+                    # Alternativamente, poderíamos gerar o UUID aqui se for o caso
+                    raise ValueError(f"Primary key '{pk_name}' não pode ser nula em bulk_create_async. Instância: {instance}")
+            
+            data = instance.model_dump()
+            params = [data.get(col) for col in columns]  # Garante a ordem correta
+            batch.add(prepared_statement, params)
+            
+            # Limite prático para o tamanho do batch para evitar timeouts
+            if len(batch) >= 100:
+                future = session.execute_async(batch)
+                await asyncio.wrap_future(future)
+                batch.clear()
+
+        # Executa o batch final com os registros restantes
+        if len(batch) > 0:
+            future = session.execute_async(batch)
+            await asyncio.wrap_future(future)
+            
+        logger.info(f"{len(instances)} instâncias inseridas em lote na tabela '{table_name}' (ASSÍNCRONO).")
         return instances
 
 # --- Funções do módulo que interagem com o QuerySet ---

@@ -112,7 +112,7 @@ def test_excecao_campo_nao_indexado(session):
     
     # Testa filtro em campo não indexado - deve gerar warning
     with pytest.warns(UserWarning, match="não é uma chave primária nem está indexado"):
-        list(Evento.filter(descricao="alguma descrição"))
+        list(Evento.filter(descricao="alguma descrição").allow_filtering())
 
 def test_excecao_primary_key_obrigatoria(session):
     """Testa se exceção é levantada quando primary key não é fornecida."""
@@ -272,7 +272,7 @@ def test_excecao_filtro_sem_operador(session):
     Usuario.create(id=uuid.uuid4(), nome="João")
     
     # Testa filtro sem operador - deve funcionar com equals implícito
-    usuarios = list(Usuario.filter(nome="João"))
+    usuarios = list(Usuario.filter(nome="João").allow_filtering())
     assert len(usuarios) == 1
 
 def test_excecao_campo_inexistente_no_create(session):

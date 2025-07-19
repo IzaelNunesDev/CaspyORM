@@ -197,6 +197,6 @@ netstat -an | grep 9042
 
 ---
 
-**Status**: ✅ **Testes Organizados e Funcionais**  
+**Status**: 🚀 **Beta - Em Desenvolvimento Ativo**  
 **Última Execução**: 19/07/2024  
-**Cobertura**: 95% das funcionalidades 
+**Cobertura**: 70% das funcionalidades (melhorando) 

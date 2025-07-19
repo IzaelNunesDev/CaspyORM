@@ -125,7 +125,7 @@ def test_filtro_com_campo_nao_indexado_gera_warning(session):
     
     # Filtro em campo não indexado deve gerar warning
     with pytest.warns(UserWarning, match="não é uma chave primária nem está indexado"):
-        list(ProdutoComIndice.filter(ativo=True))
+        list(ProdutoComIndice.filter(ativo=True).allow_filtering())
 
 def test_optimized_count_method(session):
     """Testa se o método count() otimizado funciona corretamente."""
@@ -177,14 +177,14 @@ def test_count_method_with_complex_filters(session):
         )
     
     # Testar filtros com operadores
-    produtos_caros = ProdutoComIndice.filter(preco__gte=50.0).count()
+    produtos_caros = ProdutoComIndice.filter(preco__gte=50.0).allow_filtering().count()
     assert produtos_caros == 5, f"Esperado 5 produtos com preço >= 50, mas count() retornou {produtos_caros}"
     
-    produtos_baratos = ProdutoComIndice.filter(preco__lt=30.0).count()
+    produtos_baratos = ProdutoComIndice.filter(preco__lt=30.0).allow_filtering().count()
     assert produtos_baratos == 3, f"Esperado 3 produtos com preço < 30, mas count() retornou {produtos_baratos}"
     
     # Testar filtro IN
-    produtos_especificos = ProdutoComIndice.filter(preco__in=[0.0, 20.0, 40.0]).count()
+    produtos_especificos = ProdutoComIndice.filter(preco__in=[0.0, 20.0, 40.0]).allow_filtering().count()
     assert produtos_especificos == 3, f"Esperado 3 produtos com preços específicos, mas count() retornou {produtos_especificos}"
 
 def test_optimized_exists_method(session):
@@ -232,14 +232,14 @@ def test_exists_method_with_complex_filters(session):
         )
     
     # Testar filtros com operadores
-    produtos_caros_existem = ProdutoComIndice.filter(preco__gte=30.0).exists()
+    produtos_caros_existem = ProdutoComIndice.filter(preco__gte=30.0).allow_filtering().exists()
     assert produtos_caros_existem is True, "exists() deveria retornar True para produtos com preço >= 30"
     
-    produtos_muito_caros_existem = ProdutoComIndice.filter(preco__gt=100.0).exists()
+    produtos_muito_caros_existem = ProdutoComIndice.filter(preco__gt=100.0).allow_filtering().exists()
     assert produtos_muito_caros_existem is False, "exists() deveria retornar False para produtos com preço > 100"
     
     # Testar filtro IN
-    produtos_especificos_existem = ProdutoComIndice.filter(preco__in=[0.0, 20.0]).exists()
+    produtos_especificos_existem = ProdutoComIndice.filter(preco__in=[0.0, 20.0]).allow_filtering().exists()
     assert produtos_especificos_existem is True, "exists() deveria retornar True para produtos com preços específicos"
 
 def test_bulk_create_operation(session):

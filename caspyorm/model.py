@@ -212,7 +212,8 @@ class Model(metaclass=ModelMetaclass):
         para máxima performance (assíncrono). As instâncias são modificadas no local.
         Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
         """
-        raise NotImplementedError("bulk_create_async ainda não foi implementado corretamente. Não use em produção.")
+        # Delega a lógica para um método do QuerySet
+        return await QuerySet(cls).bulk_create_async(instances)
 
     @classmethod
     def get(cls, **kwargs: Any) -> Optional["Model"]:
@@ -255,7 +256,8 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     async def sync_table_async(cls, auto_apply: bool = False, verbose: bool = True):
         """Sincroniza o schema da tabela (assíncrono)."""
-        raise NotImplementedError("sync_table_async ainda não foi implementado corretamente. Não use em produção.")
+        from ._internal.schema_sync import sync_table_async
+        await sync_table_async(cls, auto_apply=auto_apply, verbose=verbose)
 
     def __repr__(self) -> str:
         attrs = ", ".join(f"{k}={getattr(self, k)!r}" for k in self.model_fields)
@@ -336,9 +338,42 @@ class Model(metaclass=ModelMetaclass):
 
     async def update_collection_async(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
         """
-        Atualiza uma coleção (set/list/map) de forma assíncrona.
+        Atualiza atomicamente um campo de coleção (List, Set) no banco de dados (assíncrono).
+
+        Args:
+            field_name (str): O nome do campo da coleção a ser atualizado.
+            add (list | set): Itens para adicionar à coleção.
+            remove (list | set): Itens para remover da coleção.
+
+        Returns:
+            Self: A instância atualizada.
+
+        Raises:
+            ValidationError: Se o campo não existe ou não é uma coleção.
         """
-        raise NotImplementedError("update_collection_async ainda não foi implementado corretamente. Não use em produção.")
+        if field_name not in self.model_fields:
+            raise ValidationError(f"Campo '{field_name}' não existe no modelo {self.__class__.__name__}")
+        
+        from ._internal.query_builder import build_collection_update_cql
+        cql, params = build_collection_update_cql(
+            self.__caspy_schema__,
+            field_name,
+            add=add,
+            remove=remove,
+            pk_filters={pk: getattr(self, pk) for pk in self.__caspy_schema__['primary_keys']}
+        )
+        try:
+            import asyncio
+            from .connection import get_async_session
+            session = get_async_session()
+            prepared = session.prepare(cql)
+            future = session.execute_async(prepared, params)
+            await asyncio.wrap_future(future)
+            logger.info(f"Coleção '{field_name}' atualizada para a instância (ASSÍNCRONO): {self}")
+        except Exception as e:
+            logger.error(f"Erro ao atualizar coleção (ASSÍNCRONO): {e}")
+            raise
+        return self
 
     @classmethod
     def create_model(cls, name: str, fields: Dict[str, Any], table_name: Optional[str] = None) -> Type:

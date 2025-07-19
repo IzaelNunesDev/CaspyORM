@@ -1,10 +1,13 @@
 # 🚀 CaspyORM
 
+**Status: 🚀 Beta - Em Desenvolvimento Ativo**
+
 Um ORM moderno e Pythonic para Apache Cassandra, inspirado no Pydantic e focado em produtividade, performance e suporte assíncrono completo.
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-129%2F129%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-113%2F133%20passing-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-70%25-yellow.svg)](coverage.xml)
 [![Async](https://img.shields.io/badge/Async%20Support-✅-success.svg)](caspyorm/)
 
 ## ✨ Características Principais
