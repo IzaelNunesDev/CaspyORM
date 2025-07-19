@@ -212,11 +212,7 @@ class Model(metaclass=ModelMetaclass):
         para máxima performance (assíncrono). As instâncias são modificadas no local.
         Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
         """
-        if not instances:
-            return []
-        
-        # TODO: Implementar bulk_create_async no QuerySet
-        return QuerySet(cls).bulk_create(instances)
+        raise NotImplementedError("bulk_create_async ainda não foi implementado corretamente. Não use em produção.")
 
     @classmethod
     def get(cls, **kwargs: Any) -> Optional["Model"]:
@@ -259,8 +255,7 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     async def sync_table_async(cls, auto_apply: bool = False, verbose: bool = True):
         """Sincroniza o schema da tabela (assíncrono)."""
-        # TODO: Implementar sync_table_async
-        sync_table(cls, auto_apply=auto_apply, verbose=verbose)
+        raise NotImplementedError("sync_table_async ainda não foi implementado corretamente. Não use em produção.")
 
     def __repr__(self) -> str:
         attrs = ", ".join(f"{k}={getattr(self, k)!r}" for k in self.model_fields)
@@ -341,21 +336,9 @@ class Model(metaclass=ModelMetaclass):
 
     async def update_collection_async(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
         """
-        Atualiza atomicamente um campo de coleção (List, Set) no banco de dados (assíncrono).
-
-        Args:
-            field_name (str): O nome do campo da coleção a ser atualizado.
-            add (list | set): Itens para adicionar à coleção.
-            remove (list | set): Itens para remover da coleção.
-
-        Returns:
-            Self: A instância atualizada.
-
-        Raises:
-            ValidationError: Se o campo não existe ou não é uma coleção.
+        Atualiza uma coleção (set/list/map) de forma assíncrona.
         """
-        # TODO: Implementar update_collection_async
-        return self.update_collection(field_name, add, remove)
+        raise NotImplementedError("update_collection_async ainda não foi implementado corretamente. Não use em produção.")
 
     @classmethod
     def create_model(cls, name: str, fields: Dict[str, Any], table_name: Optional[str] = None) -> Type:

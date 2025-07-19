@@ -9,6 +9,7 @@ from cassandra import ConsistencyLevel
 import logging
 import warnings
 from typing import TYPE_CHECKING
+import asyncio
 if TYPE_CHECKING:
     from .model import Model
 
@@ -86,7 +87,8 @@ class QuerySet:
         session = get_async_session()
         # Preparar a query de forma síncrona, executar de forma assíncrona
         prepared = session.prepare(cql)
-        result_set = session.execute_async(prepared, params).result()
+        future = session.execute_async(prepared, params)
+        result_set = await asyncio.wrap_future(future)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         logger.debug(f"Executando query (ASSÍNCRONO): {cql} com parâmetros: {params}")
 
@@ -193,7 +195,8 @@ class QuerySet:
         
         session = get_async_session()
         prepared = session.prepare(cql)
-        result_set = session.execute_async(prepared, params).result()
+        future = session.execute_async(prepared, params)
+        result_set = await asyncio.wrap_future(future)
         
         # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
         row = result_set.one()
@@ -246,7 +249,8 @@ class QuerySet:
         
         session = get_async_session()
         prepared = session.prepare(cql)
-        result_set = session.execute_async(prepared, params).result()
+        future = session.execute_async(prepared, params)
+        result_set = await asyncio.wrap_future(future)
         
         # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
         return result_set.one() is not None
@@ -287,7 +291,7 @@ class QuerySet:
             # Se a query já foi executada, podemos deletar por chave primária
             count = 0
             for item in self._result_cache:
-                # TODO: Implementar delete_async no Model
+                # Usar delete síncrono para cada item (implementação atual)
                 item.delete()
                 count += 1
             return count
@@ -299,7 +303,8 @@ class QuerySet:
         )
         logger.debug(f"Executando DELETE (ASSÍNCRONO): {cql} com parâmetros: {params}")
         prepared = session.prepare(cql)
-        session.execute_async(prepared, params).result()
+        future = session.execute_async(prepared, params)
+        await asyncio.wrap_future(future)
         return 0  # Cassandra não retorna número de linhas deletadas
 
     def page(self, page_size: int = 100, paging_state: Any = None):
@@ -322,7 +327,7 @@ class QuerySet:
         prepared = session.prepare(cql)
         statement = prepared.bind(params)
         statement.fetch_size = page_size
-        # TODO: Implementar paging_state corretamente
+        # Implementação atual de paginação - paging_state será implementado em versão futura
         result_set = session.execute(statement)
         resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         next_paging_state = result_set.paging_state
@@ -348,8 +353,9 @@ class QuerySet:
         prepared = session.prepare(cql)
         statement = prepared.bind(params)
         statement.fetch_size = page_size
-        # TODO: Implementar paging_state corretamente
-        result_set = session.execute_async(statement).result()
+        # Implementação atual de paginação - paging_state será implementado em versão futura
+        future = session.execute_async(statement)
+        result_set = await asyncio.wrap_future(future)
         resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
@@ -448,7 +454,8 @@ async def save_instance_async(instance) -> None:
     try:
         session = get_async_session()
         prepared = session.prepare(insert_query)
-        session.execute_async(prepared, list(data.values())).result()
+        future = session.execute_async(prepared, list(data.values()))
+        await asyncio.wrap_future(future)
         logger.info(f"Instância salva na tabela '{table_name}' (ASSÍNCRONO)")
     except Exception as e:
         logger.error(f"Erro ao salvar instância (async): {e}")

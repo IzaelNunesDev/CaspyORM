@@ -4,6 +4,7 @@ from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
 from typing import List, Optional, Dict, Any
 import logging
+import asyncio
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -184,7 +185,7 @@ class ConnectionManager:
                 future = self.async_session.execute_async(query, parameters)
             else:
                 future = self.async_session.execute_async(query)
-            return future.result()
+            return await asyncio.wrap_future(future)
         except Exception as e:
             logger.error(f"Erro ao executar query (async): {e}")
             logger.error(f"Query: {query}")
