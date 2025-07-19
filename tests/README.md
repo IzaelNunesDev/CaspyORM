@@ -28,13 +28,12 @@ Esta pasta contém todos os testes da biblioteca CaspyORM, organizados por categ
 
 
 
-### 🚕 [`nyc_taxi/`](nyc_taxi/)
-**Testes específicos NYC TLC** - Dados reais de táxi
-- `test_nyc_1gb_clean.py` - Versão limpa e otimizada
-- `test_real_nyc_data.py` - Versão básica
-- `test_real_nyc_data_1gb.py` - Versão 1GB
-- `test_real_nyc_data_1gb_fast.py` - Versão rápida
-- `test_real_nyc_data_1gb_ultra.py` - Versão ultra-otimizada
+### 🚕 Testes de Performance
+**Testes de performance** - Dados sintéticos para validação de performance
+- `test_08_nivel1_improvements.py` - Melhorias nível 1
+- `test_09_nivel2_improvements.py` - Melhorias nível 2
+- `test_10_pydantic_collections.py` - Coleções com Pydantic
+- `test_11_nivel3_improvements.py` - Melhorias nível 3
 
 ---
 
@@ -60,13 +59,13 @@ python -m pytest tests/integration/test_12_nyc_taxi_performance.py
 
 
 
-### Testes NYC TLC
+### Testes de Performance
 ```bash
-# Executar teste limpo (recomendado)
-python tests/nyc_taxi/test_nyc_1gb_clean.py
+# Executar todos os testes de performance
+python -m pytest tests/integration/ -v
 
-# Executar versão ultra-otimizada
-python tests/nyc_taxi/test_real_nyc_data_1gb_ultra.py
+# Executar teste específico
+python -m pytest tests/integration/test_11_nivel3_improvements.py -v
 ```
 
 ---
@@ -109,11 +108,11 @@ python -m pytest tests/integration/ -v
 
 
 
-### 4. **Testes NYC TLC** (Cenário Real)
+### 3. **Testes de Performance** (Cenário Real)
 ```bash
-python tests/nyc_taxi/test_nyc_1gb_clean.py
+python -m pytest tests/integration/ -v
 ```
-**Objetivo**: Validar com dados reais em volume
+**Objetivo**: Validar performance com dados sintéticos
 
 ---
 
@@ -153,10 +152,10 @@ source .venv/bin/activate
 
 
 
-### Testes NYC TLC
-- **Tempo**: 2-5 minutos
-- **Volume**: 100k-1M registros
-- **Memória**: 1-2GB
+### Testes de Performance
+- **Tempo**: 1-3 minutos
+- **Volume**: 10k-100k registros
+- **Memória**: 500MB-1GB
 
 ---
 

@@ -42,12 +42,20 @@ except ImportError:
         def __init__(self, status_code: int, detail: str):
             self.status_code = status_code
             self.detail = detail
+        
+        def __str__(self):
+            return self.detail
     
     class JSONResponse:
         pass
     
     class BaseModel:
         pass
+    
+    class status:
+        HTTP_503_SERVICE_UNAVAILABLE = 503
+        HTTP_400_BAD_REQUEST = 400
+        HTTP_500_INTERNAL_SERVER_ERROR = 500
 
 from ..connection import get_session as _get_session, get_async_session as _get_async_session
 from ..model import Model

@@ -1,4 +1,5 @@
 # caspyorm/_internal/schema_sync.py
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
@@ -359,6 +360,12 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
     else:
         logger.info("\nExecute sync_table(auto_apply=True) para aplicar as mudanças automaticamente.")
 
+async def _wait_for_cassandra_future(future):
+    """Aguarda um ResponseFuture do Cassandra driver."""
+    # O ResponseFuture do Cassandra tem um método result() que bloqueia
+    # Vamos usar asyncio.to_thread para não bloquear o event loop
+    return await asyncio.to_thread(future.result)
+
 async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool = True) -> None:
     """
     Sincroniza o schema do modelo com a tabela no Cassandra (assíncrono).
@@ -368,7 +375,6 @@ async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, v
         auto_apply: Se True, aplica as mudanças automaticamente
         verbose: Se True, exibe informações detalhadas
     """
-    import asyncio
     from ..connection import get_async_session
     
     session = get_async_session()
@@ -395,7 +401,8 @@ async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, v
         
         try:
             future = session.execute_async(create_table_query)
-            await asyncio.wrap_future(future)
+            # Aguardar o ResponseFuture do Cassandra
+            await _wait_for_cassandra_future(future)
             logger.info("Tabela criada com sucesso (ASSÍNCRONO).")
             
             # Criar índices após criar a tabela
@@ -480,7 +487,7 @@ async def apply_schema_changes_async(session: Session, table_name: str, model_sc
             cql = f"ALTER TABLE {table_name} ADD {field_name} {cql_type}"
             try:
                 future = session.execute_async(cql)
-                await asyncio.wrap_future(future)
+                await _wait_for_cassandra_future(future)
                 logger.info(f"  [+] Executando: {cql}")
             except Exception as e:
                 logger.error(f"  [!] ERRO ao adicionar coluna '{field_name}': {e}")
@@ -537,7 +544,7 @@ async def create_indexes_for_table_async(session: Session, table_name: str, mode
             if verbose:
                 logger.info(f"  [+] Executando: {create_index_query}")
             future = session.execute_async(create_index_query)
-            await asyncio.wrap_future(future)
+            await _wait_for_cassandra_future(future)
             logger.info(f"  [✓] Índice '{index_name}' criado com sucesso")
         except Exception as e:
             logger.error(f"  [!] ERRO ao criar índice '{index_name}': {e}")

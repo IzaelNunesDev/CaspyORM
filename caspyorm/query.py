@@ -13,6 +13,12 @@ import asyncio
 if TYPE_CHECKING:
     from .model import Model
 
+async def _wait_for_cassandra_future(future):
+    """Aguarda um ResponseFuture do Cassandra driver."""
+    # O ResponseFuture do Cassandra tem um método result() que bloqueia
+    # Vamos usar asyncio.to_thread para não bloquear o event loop
+    return await asyncio.to_thread(future.result)
+
 logger = logging.getLogger(__name__)
 
 def _map_row_to_instance(model_cls, row_dict):
@@ -92,7 +98,7 @@ class QuerySet:
         # Preparar a query de forma síncrona, executar de forma assíncrona
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, params)
-        result_set = await asyncio.wrap_future(future)
+        result_set = await _wait_for_cassandra_future(future)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         logger.debug(f"Executando query (ASSÍNCRONO): {cql} com parâmetros: {params}")
 
@@ -118,6 +124,11 @@ class QuerySet:
                 
         clone._filters.update(kwargs)
         return clone
+
+    def filter_async(self, **kwargs: Any) -> Self:
+        """Adiciona condições de filtro à query (versão assíncrona - mantém compatibilidade)."""
+        # O filter_async é idêntico ao filter, mas mantém a consistência da API
+        return self.filter(**kwargs)
 
     def limit(self, count: int) -> Self:
         """Limita o número de resultados retornados."""
@@ -211,7 +222,7 @@ class QuerySet:
         session = get_async_session()
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, params)
-        result_set = await asyncio.wrap_future(future)
+        result_set = await _wait_for_cassandra_future(future)
         
         # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
         row = result_set.one()
@@ -267,7 +278,7 @@ class QuerySet:
         session = get_async_session()
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, params)
-        result_set = await asyncio.wrap_future(future)
+        result_set = await _wait_for_cassandra_future(future)
         
         # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
         return result_set.one() is not None
@@ -308,21 +319,37 @@ class QuerySet:
             # Se a query já foi executada, podemos deletar por chave primária
             count = 0
             for item in self._result_cache:
-                # Usar delete síncrono para cada item (implementação atual)
-                item.delete()
+                # CORRIGIDO: Usar delete assíncrono para cada item
+                await item.delete_async()
                 count += 1
             return count
-        # Se a query não foi executada, fazemos uma deleção em massa com base nos filtros
-        session = get_async_session()
-        cql, params = query_builder.build_delete_cql(
-            self.model_cls.__caspy_schema__,
-            filters=self._filters
-        )
-        logger.debug(f"Executando DELETE (ASSÍNCRONO): {cql} com parâmetros: {params}")
-        prepared = session.prepare(cql)
-        future = session.execute_async(prepared, params)
-        await asyncio.wrap_future(future)
-        return 0  # Cassandra não retorna número de linhas deletadas
+        
+        # CORRIGIDO: Para deleção em lote, primeiro buscar os registros
+        # e depois deletá-los individualmente para evitar problemas com chaves de partição
+        try:
+            # Buscar todos os registros que correspondem aos filtros
+            items_to_delete = await self.all_async()
+            count = 0
+            
+            # Deletar cada item individualmente
+            for item in items_to_delete:
+                await item.delete_async()
+                count += 1
+            
+            return count
+        except Exception as e:
+            logger.error(f"Erro durante deleção em lote: {e}")
+            # Fallback: tentar deleção direta se os filtros contêm chaves de partição
+            session = get_async_session()
+            cql, params = query_builder.build_delete_cql(
+                self.model_cls.__caspy_schema__,
+                filters=self._filters
+            )
+            logger.debug(f"Executando DELETE (ASSÍNCRONO): {cql} com parâmetros: {params}")
+            prepared = session.prepare(cql)
+            future = session.execute_async(prepared, params)
+            await _wait_for_cassandra_future(future)
+            return 0  # Cassandra não retorna número de linhas deletadas
 
     def page(self, page_size: int = 100, paging_state: Any = None):
         """
@@ -393,7 +420,7 @@ class QuerySet:
             future = session.execute_async(statement, paging_state=paging_state)
         else:
             future = session.execute_async(statement)
-        result_set = await asyncio.wrap_future(future)
+        result_set = await _wait_for_cassandra_future(future)
         
         # Processar apenas os resultados da página atual (limitado pelo fetch_size)
         resultados = []
@@ -484,13 +511,13 @@ class QuerySet:
             # Limite prático para o tamanho do batch para evitar timeouts
             if len(batch) >= 100:
                 future = session.execute_async(batch)
-                await asyncio.wrap_future(future)
+                await _wait_for_cassandra_future(future)
                 batch.clear()
 
         # Executa o batch final com os registros restantes
         if len(batch) > 0:
             future = session.execute_async(batch)
-            await asyncio.wrap_future(future)
+            await _wait_for_cassandra_future(future)
             
         logger.info(f"{len(instances)} instâncias inseridas em lote na tabela '{table_name}' (ASSÍNCRONO).")
         return instances
@@ -546,7 +573,7 @@ async def save_instance_async(instance) -> None:
         session = get_async_session()
         prepared = session.prepare(insert_query)
         future = session.execute_async(prepared, list(data.values()))
-        await asyncio.wrap_future(future)
+        await _wait_for_cassandra_future(future)
         logger.info(f"Instância salva na tabela '{table_name}' (ASSÍNCRONO)")
     except Exception as e:
         logger.error(f"Erro ao salvar instância (async): {e}")

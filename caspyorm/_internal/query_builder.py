@@ -33,6 +33,7 @@ def build_select_cql(schema: Dict[str, Any], columns: Optional[List[str]] = None
             'lt': '<',
             'lte': '<=',
             'in': 'IN',
+            'contains': 'CONTAINS',
         }
         
         where_clauses = []
@@ -172,6 +173,7 @@ def build_count_cql(schema: Dict[str, Any], filters: Optional[Dict[str, Any]] = 
             'lt': '<',
             'lte': '<=',
             'in': 'IN',
+            'contains': 'CONTAINS',
         }
         
         where_clauses = []

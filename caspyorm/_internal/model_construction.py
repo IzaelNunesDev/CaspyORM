@@ -52,6 +52,13 @@ class ModelMetaclass(type):
 
         # Cria a classe final
         new_class = super().__new__(mcs, name, bases, attrs)
+        
+        # Adiciona o atributo objects para seguir o padrão Django ORM
+        from ..query import QuerySet
+        from ..model import Model
+        from typing import cast
+        setattr(new_class, 'objects', QuerySet(cast(type[Model], new_class)))
+        
         return new_class
 
     @staticmethod

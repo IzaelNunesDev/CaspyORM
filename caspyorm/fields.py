@@ -234,10 +234,10 @@ class Set(BaseField):
     def to_cql(self, value: Any) -> Any:
         if value is None:
             return None
-        result = []
+        result = set()
         for item in value:
             try:
-                result.append(self.inner_field.to_cql(item))
+                result.add(self.inner_field.to_cql(item))
             except TypeError as e:
                 raise TypeError(f"Não foi possível converter item '{item}' do set para o tipo {self.inner_field.python_type.__name__}: {e}")
         return result
