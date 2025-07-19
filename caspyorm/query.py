@@ -339,9 +339,11 @@ class QuerySet:
         )
         session = get_session()
         
-        # CORRIGIDO: Usar SimpleStatement para suporte a paging_state
-        statement = SimpleStatement(cql, fetch_size=page_size)
-        result_set = session.execute(statement, params)
+        # CORRIGIDO: Usar PreparedStatement para suporte a parâmetros
+        prepared = session.prepare(cql)
+        statement = prepared.bind(params)
+        statement.fetch_size = page_size
+        result_set = session.execute(statement)
         
         # Se temos um paging_state, precisamos pular os resultados anteriores
         if paging_state is not None:
@@ -378,9 +380,11 @@ class QuerySet:
         )
         session = get_async_session()
         
-        # CORRIGIDO: Usar SimpleStatement para suporte a paging_state
-        statement = SimpleStatement(cql, fetch_size=page_size)
-        future = session.execute_async(statement, params)
+        # CORRIGIDO: Usar PreparedStatement para suporte a parâmetros
+        prepared = session.prepare(cql)
+        statement = prepared.bind(params)
+        statement.fetch_size = page_size
+        future = session.execute_async(statement)
         result_set = await asyncio.wrap_future(future)
         
         # Se temos um paging_state, precisamos pular os resultados anteriores

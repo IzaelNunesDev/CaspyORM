@@ -200,7 +200,6 @@ CaspyORM/
 │   ├── basic/                 # Exemplos básicos
 │   └── api/                   # Exemplos de API FastAPI
 ├── 🔧 scripts/                # Scripts utilitários
-│   ├── benchmark/             # Scripts de benchmark
 │   └── download/              # Scripts de download
 ├── 📊 data/                   # Dados de teste
 │   └── nyc_taxi/              # Dados NYC TLC (48MB)
@@ -235,7 +234,7 @@ pytest --cov=caspyorm --cov-report=html
 
 ## 📊 Performance
 
-### Benchmarks com Dados Reais (NYC Taxi - 100k registros)
+### Métricas de Performance
 
 | Operação | Síncrono | Assíncrono | Melhoria |
 |----------|----------|------------|----------|

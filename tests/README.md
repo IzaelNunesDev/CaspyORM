@@ -26,10 +26,7 @@ Esta pasta contém todos os testes da biblioteca CaspyORM, organizados por categ
 - `test_11_nivel3_improvements.py` - Melhorias nível 3
 - `test_12_nyc_taxi_performance.py` - Performance com dados sintéticos
 
-### ⚡ [`performance/`](performance/)
-**Testes de performance** - Benchmark e métricas
-- `benchmark_nyc_taxi.py` - Benchmark completo
-- `test_nyc_operations.py` - Teste de operações com dados reais
+
 
 ### 🚕 [`nyc_taxi/`](nyc_taxi/)
 **Testes específicos NYC TLC** - Dados reais de táxi
@@ -61,14 +58,7 @@ python -m pytest tests/integration/
 python -m pytest tests/integration/test_12_nyc_taxi_performance.py
 ```
 
-### Testes de Performance
-```bash
-# Executar benchmark
-python tests/performance/benchmark_nyc_taxi.py
 
-# Executar teste de operações
-python tests/performance/test_nyc_operations.py
-```
 
 ### Testes NYC TLC
 ```bash
@@ -117,11 +107,7 @@ python -m pytest tests/integration/ -v
 ```
 **Objetivo**: Verificar integração entre componentes
 
-### 3. **Testes de Performance** (Benchmark)
-```bash
-python tests/performance/test_nyc_operations.py
-```
-**Objetivo**: Avaliar performance com dados reais
+
 
 ### 4. **Testes NYC TLC** (Cenário Real)
 ```bash
@@ -165,10 +151,7 @@ source .venv/bin/activate
 - **Cobertura**: 100% das funcionalidades básicas
 - **Status**: ✅ Todos passando
 
-### Testes de Performance
-- **Tempo**: ~5 minutos
-- **Dados**: 100.000 registros reais
-- **Métricas**: Documentadas em `docs/performance/`
+
 
 ### Testes NYC TLC
 - **Tempo**: 2-5 minutos

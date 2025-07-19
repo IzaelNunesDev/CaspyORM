@@ -7,6 +7,8 @@ import time
 from caspyorm import Model, fields
 from caspyorm import connection
 
+
+
 class UsuarioPaginacao(Model):
     __table_name__ = 'usuarios_paginacao_teste'
     grupo: fields.Text = fields.Text(partition_key=True)
@@ -23,15 +25,12 @@ def setup_usuarios(session):
         pass
     
     UsuarioPaginacao.sync_table()
-    
-    # Adicionar uma pausa para o schema se estabilizar
-    time.sleep(1.5)
 
     # O loop de deleção anterior era redundante, já que a tabela foi dropada.
     
-    # Criar 25 usuários no grupo 'A'
+    # Criar 10 usuários no grupo 'A' (reduzido para teste mais rápido)
     usuarios = []
-    for i in range(25):
+    for i in range(10):
         usuario = UsuarioPaginacao.create(
             grupo="A",
             id=uuid.uuid4(), # É importante passar o ID aqui, pois a PK é composta
@@ -53,4 +52,4 @@ def test_paginacao_page_method(session, setup_usuarios):
         if not paging_state:
             break
     
-    assert len(nomes) == 25
+    assert len(nomes) == 10

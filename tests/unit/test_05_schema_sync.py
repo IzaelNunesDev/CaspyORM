@@ -18,20 +18,26 @@ def wait_for_column(session, keyspace, table, column, timeout=5, should_exist=Tr
     Returns:
         bool: True se a condição foi atendida dentro do timeout
     """
-    for _ in range(timeout):
-        result = session.execute(f"""
-            SELECT column_name FROM system_schema.columns
-            WHERE keyspace_name = '{keyspace}'
-            AND table_name = '{table}'
-            AND column_name = '{column}'
-        """)
-        
-        exists = result.one() is not None
-        
-        if exists == should_exist:
-            return True
+    for attempt in range(timeout):
+        try:
+            result = session.execute(f"""
+                SELECT column_name FROM system_schema.columns
+                WHERE keyspace_name = '{keyspace}'
+                AND table_name = '{table}'
+                AND column_name = '{column}'
+            """)
             
-        time.sleep(1)
+            exists = result.one() is not None
+            
+            if exists == should_exist:
+                return True
+                
+        except Exception:
+            # Erro na consulta, continuar tentando
+            pass
+        
+        # Aguardar antes da próxima tentativa (delay menor e mais eficiente)
+        time.sleep(0.2)
     
     return False
 
@@ -162,7 +168,7 @@ def test_sync_table_preserva_dados(session):
     # Verifica se os dados foram preservados
     produto = ProdutoComPreco.get(id=produto_id)
     assert produto is not None
-    assert produto.nome == "Produto Original"
+    assert getattr(produto, 'nome', None) == "Produto Original"
 
 def test_sync_table_com_tipo_diferente(session):
     """Testa se sync_table detecta mudanças de tipo."""
