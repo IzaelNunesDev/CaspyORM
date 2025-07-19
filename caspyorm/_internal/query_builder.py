@@ -15,7 +15,7 @@ def build_insert_cql(schema: Dict[str, Any]) -> str:
     
     return f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
 
-def build_select_cql(schema: Dict[str, Any], columns: Optional[List[str]] = None, filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, ordering: Optional[List[str]] = None) -> Tuple[str, List[Any]]:
+def build_select_cql(schema: Dict[str, Any], columns: Optional[List[str]] = None, filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, ordering: Optional[List[str]] = None, allow_filtering: bool = False) -> Tuple[str, List[Any]]:
     """Constrói uma query SELECT ... WHERE ... ORDER BY ... LIMIT com suporte a operadores."""
     table_name = schema['table_name']
     
@@ -81,8 +81,8 @@ def build_select_cql(schema: Dict[str, Any], columns: Optional[List[str]] = None
         cql += f" LIMIT ?"
         params.append(limit)
 
-    # Adicionar ALLOW FILTERING quando há filtros
-    if filters:
+    # Adicionar ALLOW FILTERING apenas se explicitamente solicitado
+    if allow_filtering:
         cql += " ALLOW FILTERING"
             
     return cql, params

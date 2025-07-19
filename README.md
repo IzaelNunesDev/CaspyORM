@@ -28,7 +28,6 @@ Um ORM moderno e Pythonic para Apache Cassandra, inspirado no Pydantic e focado 
 - **Paginação eficiente** para grandes datasets
 
 ### 🛠️ **Ferramentas de Desenvolvimento**
-- **CLI Poderosa** para inspeção e depuração
 - **Logging detalhado** para monitoramento
 - **Tratamento de erros** robusto e informativo
 - **Documentação completa** com exemplos práticos
@@ -182,28 +181,7 @@ post.update_collection('colaboradores', remove={'bruno'})
 await post.update_collection_async('tags', add=['async'])
 ```
 
-## 🖥️ CLI Poderosa
 
-```bash
-# Configurar modelos
-export CASPY_MODELS_PATH="meu_projeto.models"
-
-# Comandos básicos
-caspy --help
-caspy info
-caspy models
-caspy connect
-
-# Consultas
-caspy user get --filter username=joao_silva
-caspy user filter --filter is_active=true
-caspy user count --filter is_active=true
-caspy user exists --filter email=joao@example.com
-
-# Operações
-caspy post filter --filter author_id=uuid --limit 10
-caspy user delete --filter username=usuario_antigo
-```
 
 ## 🏗️ Estrutura do Projeto
 
@@ -220,15 +198,14 @@ CaspyORM/
 │   └── nyc_taxi/              # Testes com dados reais NYC TLC
 ├── 🚀 examples/               # Exemplos práticos
 │   ├── basic/                 # Exemplos básicos
-│   ├── api/                   # Exemplos de API FastAPI
-│   └── cli_demo.py            # Demonstração da CLI
+│   └── api/                   # Exemplos de API FastAPI
 ├── 🔧 scripts/                # Scripts utilitários
 │   ├── benchmark/             # Scripts de benchmark
 │   └── download/              # Scripts de download
 ├── 📊 data/                   # Dados de teste
 │   └── nyc_taxi/              # Dados NYC TLC (48MB)
 ├── 📦 caspyorm/               # Biblioteca principal
-├── 🖥️ cli/                    # Ferramenta de linha de comando
+
 ├── 📋 pyproject.toml          # Configuração do projeto
 └── 📖 README.md               # Este arquivo
 ```
@@ -302,7 +279,6 @@ async def list_users():
 ### ✅ Implementado
 - [x] API síncrona completa
 - [x] API assíncrona corrigida (event loop seguro)
-- [x] CLI poderosa
 - [x] Integração Pydantic
 - [x] Operações em lote
 - [x] Coleções (List, Set, Map)

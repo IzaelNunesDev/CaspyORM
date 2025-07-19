@@ -43,8 +43,6 @@ dev = [
     "ruff>=0.1.0",
     "black>=23.0.0",
     "mypy>=1.0.0",
-    "typer[all]>=0.9.0",
-    "rich>=13.0.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -63,8 +61,7 @@ fastapi = [
     "pydantic>=2.0.0",
 ]
 
-[project.scripts]
-caspy = "cli.main:app"
+
 
 [project.urls]
 Homepage = "https://github.com/caspyorm/caspyorm"

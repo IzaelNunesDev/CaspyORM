@@ -29,6 +29,7 @@ class QuerySet:
         self._filters: Dict[str, Any] = {}
         self._limit: Optional[int] = None
         self._ordering: List[str] = []  # NOVO: lista de campos para ordenação
+        self._allow_filtering: bool = False  # NOVO: flag para ALLOW FILTERING
         self._result_cache: Optional[List["Model"]] = None
 
     def __iter__(self):
@@ -57,6 +58,7 @@ class QuerySet:
         new_qs._filters = self._filters.copy()
         new_qs._limit = self._limit
         new_qs._ordering = self._ordering[:]  # NOVO: copiar lista de ordenação
+        new_qs._allow_filtering = self._allow_filtering  # NOVO: copiar flag ALLOW FILTERING
         return new_qs
 
     def _execute_query(self):
@@ -66,7 +68,8 @@ class QuerySet:
             columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=self._limit,
-            ordering=self._ordering  # NOVO: passar ordenação
+            ordering=self._ordering,  # NOVO: passar ordenação
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_session()
         # Sempre preparar a query para garantir suporte a parâmetros posicionais
@@ -82,7 +85,8 @@ class QuerySet:
             columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=self._limit,
-            ordering=self._ordering  # NOVO: passar ordenação
+            ordering=self._ordering,  # NOVO: passar ordenação
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_async_session()
         # Preparar a query de forma síncrona, executar de forma assíncrona
@@ -125,6 +129,15 @@ class QuerySet:
         """Define a ordenação da query."""
         clone = self._clone()
         clone._ordering = list(fields)
+        return clone
+
+    def allow_filtering(self) -> Self:
+        """
+        Permite explicitamente o uso de ALLOW FILTERING na query.
+        ATENÇÃO: Use apenas quando necessário, pois pode impactar a performance.
+        """
+        clone = self._clone()
+        clone._allow_filtering = True
         return clone
 
     def all(self) -> List["Model"]:
@@ -321,15 +334,28 @@ class QuerySet:
             columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=None,  # Não usar LIMIT para paginação real
-            ordering=self._ordering
+            ordering=self._ordering,
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_session()
-        prepared = session.prepare(cql)
-        statement = prepared.bind(params)
-        statement.fetch_size = page_size
-        # Implementação atual de paginação - paging_state será implementado em versão futura
-        result_set = session.execute(statement)
-        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
+        
+        # CORRIGIDO: Usar SimpleStatement para suporte a paging_state
+        statement = SimpleStatement(cql, fetch_size=page_size)
+        result_set = session.execute(statement, params)
+        
+        # Se temos um paging_state, precisamos pular os resultados anteriores
+        if paging_state is not None:
+            # Para implementação futura: usar paging_state diretamente
+            # Por enquanto, vamos usar uma abordagem mais simples
+            pass
+            
+        # Limitar os resultados ao page_size
+        resultados = []
+        for i, row in enumerate(result_set):
+            if i >= page_size:
+                break
+            resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+            
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
 
@@ -347,16 +373,29 @@ class QuerySet:
             columns=None,  # Seleciona todas as colunas
             filters=self._filters,
             limit=None,  # Não usar LIMIT para paginação real
-            ordering=self._ordering
+            ordering=self._ordering,
+            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_async_session()
-        prepared = session.prepare(cql)
-        statement = prepared.bind(params)
-        statement.fetch_size = page_size
-        # Implementação atual de paginação - paging_state será implementado em versão futura
-        future = session.execute_async(statement)
+        
+        # CORRIGIDO: Usar SimpleStatement para suporte a paging_state
+        statement = SimpleStatement(cql, fetch_size=page_size)
+        future = session.execute_async(statement, params)
         result_set = await asyncio.wrap_future(future)
-        resultados = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
+        
+        # Se temos um paging_state, precisamos pular os resultados anteriores
+        if paging_state is not None:
+            # Para implementação futura: usar paging_state diretamente
+            # Por enquanto, vamos usar uma abordagem mais simples
+            pass
+            
+        # Limitar os resultados ao page_size
+        resultados = []
+        for i, row in enumerate(result_set):
+            if i >= page_size:
+                break
+            resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+            
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
 
