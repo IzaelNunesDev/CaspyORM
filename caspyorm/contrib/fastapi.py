@@ -52,14 +52,22 @@ except ImportError:
     class BaseModel:
         pass
     
+    def create_model(name, **fields):
+        # Dummy create_model para quando Pydantic não está disponível
+        class DummyModel:
+            pass
+        DummyModel.__name__ = name
+        return DummyModel
+    
     class status:
         HTTP_503_SERVICE_UNAVAILABLE = 503
         HTTP_400_BAD_REQUEST = 400
         HTTP_500_INTERNAL_SERVER_ERROR = 500
+        HTTP_404_NOT_FOUND = 404
 
 from ..connection import get_session as _get_session, get_async_session as _get_async_session
 from ..model import Model
-from ..exceptions import ValidationError, ConnectionError
+from ..exceptions import ValidationError, ConnectionError, ObjectNotFound, MultipleObjectsReturned
 
 logger = logging.getLogger(__name__)
 
@@ -211,10 +219,10 @@ def create_response_model(
         fields[field_name] = (field_info.annotation, field_info.default)
     
     # Criar nome do modelo
-    model_name = name or f"{model_class.__name__}Response"
+    response_model_name = name or f"{model_class.__name__}Response"
     
     # Criar modelo de resposta
-    return create_model(model_name, **fields)
+    return create_model(response_model_name, **fields)
 
 
 def handle_caspyorm_errors(func):
@@ -235,6 +243,18 @@ def handle_caspyorm_errors(func):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Erro de validação: {str(e)}"
+            )
+        except ObjectNotFound as e:
+            logger.warning(f"Objeto não encontrado: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Recurso não encontrado: {str(e)}"
+            )
+        except MultipleObjectsReturned as e:
+            logger.error(f"Múltiplos objetos retornados: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno: múltiplos objetos encontrados"
             )
         except ConnectionError as e:
             logger.error(f"Erro de conexão: {e}")

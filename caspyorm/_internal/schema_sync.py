@@ -167,10 +167,13 @@ def apply_schema_changes(session: Session, table_name: str, model_schema: Dict[s
                 logger.warning(f"      - Operação manual necessária para: {mismatch}")
     
     # Verificar mudanças na chave primária (não suportado)
-    if model_schema['primary_keys'] != db_schema['primary_keys']:
-        mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
+    model_primary_keys = model_schema.get('primary_keys', [])
+    db_primary_keys = db_schema.get('primary_keys', [])
+    if model_primary_keys != db_primary_keys:
+        mismatch = f"{db_primary_keys} -> {model_primary_keys}"
         logger.error("\n  [!] ERRO CRÍTICO: A alteração de chave primária não é possível no Cassandra.")
         logger.error("      - A tabela deve ser recriada para aplicar esta mudança.")
+        raise RuntimeError("A alteração de chave primária não é possível no Cassandra.")
     
     logger.info("\n✅ Aplicação de schema concluída.")
 
@@ -180,20 +183,23 @@ def build_create_table_cql(table_name: str, schema: Dict[str, Any]) -> str:
     """
     fields = []
     for field_name, field_details in schema['fields'].items():
-        field_def = f"{field_name} {field_details['type']}"
+        cql_type = _get_cql_type(field_details['type'])
+        field_def = f"{field_name} {cql_type}"
         fields.append(field_def)
     
     # Construir chave primária
     if schema['partition_keys'] and schema['clustering_keys']:
         # Chave composta: partition + clustering
-        pk_def = f"PRIMARY KEY (({', '.join(schema['partition_keys'])})"
-        if schema['clustering_keys']:
-            pk_def += f", {', '.join(schema['clustering_keys'])})"
+        if len(schema['partition_keys']) > 1:
+            pk_def = f"PRIMARY KEY (({', '.join(schema['partition_keys'])}), {', '.join(schema['clustering_keys'])})"
         else:
-            pk_def += ")"
+            pk_def = f"PRIMARY KEY ({', '.join(schema['partition_keys'])}, {', '.join(schema['clustering_keys'])})"
     elif schema['partition_keys']:
-        # Chave simples
-        pk_def = f"PRIMARY KEY ({', '.join(schema['partition_keys'])})"
+        # Chave simples ou múltiplas partition keys
+        if len(schema['partition_keys']) > 1:
+            pk_def = f"PRIMARY KEY (({', '.join(schema['partition_keys'])}))"
+        else:
+            pk_def = f"PRIMARY KEY ({', '.join(schema['partition_keys'])})"
     else:
         raise RuntimeError("Tabela deve ter pelo menos uma chave primária")
     
@@ -226,7 +232,13 @@ def get_existing_indexes(session: Session, keyspace: str, table_name: str) -> se
 
 def create_indexes_for_table(session: Session, table_name: str, model_schema: Dict[str, Any], verbose: bool = True) -> None:
     """Cria os índices necessários para uma tabela."""
-    if not model_schema.get('indexes'):
+    # Verificar campos com índice
+    indexed_fields = []
+    for field_name, field_details in model_schema['fields'].items():
+        if field_details.get('index', False):
+            indexed_fields.append(field_name)
+    
+    if not indexed_fields:
         return
     
     keyspace = session.keyspace
@@ -237,7 +249,7 @@ def create_indexes_for_table(session: Session, table_name: str, model_schema: Di
     
     logger.info(f"Criando índices para a tabela '{table_name}'...")
     
-    for field_name in model_schema['indexes']:
+    for field_name in indexed_fields:
         index_name = f"{table_name}_{field_name}_idx"
         
         if index_name in existing_indexes:
@@ -319,8 +331,10 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
     
     # Verificar chave primária
     pk_mismatch = None
-    if model_schema['primary_keys'] != db_schema['primary_keys']:
-        pk_mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
+    model_primary_keys = model_schema.get('primary_keys', [])
+    db_primary_keys = db_schema.get('primary_keys', [])
+    if model_primary_keys != db_primary_keys:
+        pk_mismatch = f"{db_primary_keys} -> {model_primary_keys}"
     
     # Verificar se há diferenças
     has_changes = (fields_to_add or fields_to_remove or type_mismatches or pk_mismatch)
@@ -358,13 +372,20 @@ def sync_table(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool
         # Criar índices após aplicar mudanças
         create_indexes_for_table(session, table_name, model_schema, verbose)
     else:
+        # Sempre criar índices, mesmo sem auto_apply
+        create_indexes_for_table(session, table_name, model_schema, verbose)
         logger.info("\nExecute sync_table(auto_apply=True) para aplicar as mudanças automaticamente.")
 
 async def _wait_for_cassandra_future(future):
     """Aguarda um ResponseFuture do Cassandra driver."""
-    # O ResponseFuture do Cassandra tem um método result() que bloqueia
-    # Vamos usar asyncio.to_thread para não bloquear o event loop
-    return await asyncio.to_thread(future.result)
+    # CORREÇÃO CRÍTICA: O ResponseFuture do Cassandra não é compatível com asyncio.wrap_future
+    # Precisamos usar o método .result() diretamente
+    return future.result()
+
+def get_async_session():
+    """Função auxiliar para obter sessão assíncrona."""
+    from ..connection import get_async_session
+    return get_async_session()
 
 async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, verbose: bool = True) -> None:
     """
@@ -375,8 +396,6 @@ async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, v
         auto_apply: Se True, aplica as mudanças automaticamente
         verbose: Se True, exibe informações detalhadas
     """
-    from ..connection import get_async_session
-    
     session = get_async_session()
     if not session:
         raise RuntimeError("Não há conexão assíncrona ativa com o Cassandra")
@@ -431,8 +450,10 @@ async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, v
     
     # Verificar chave primária
     pk_mismatch = None
-    if model_schema['primary_keys'] != db_schema['primary_keys']:
-        pk_mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
+    model_primary_keys = model_schema.get('primary_keys', [])
+    db_primary_keys = db_schema.get('primary_keys', [])
+    if model_primary_keys != db_primary_keys:
+        pk_mismatch = f"{db_primary_keys} -> {model_primary_keys}"
     
     # Verificar se há diferenças
     has_changes = (fields_to_add or fields_to_remove or type_mismatches or pk_mismatch)
@@ -470,6 +491,8 @@ async def sync_table_async(model_cls: Type["Model"], auto_apply: bool = False, v
         # Criar índices após aplicar mudanças
         await create_indexes_for_table_async(session, table_name, model_schema, verbose)
     else:
+        # Sempre criar índices, mesmo sem auto_apply
+        await create_indexes_for_table_async(session, table_name, model_schema, verbose)
         logger.info("\nExecute sync_table_async(auto_apply=True) para aplicar as mudanças automaticamente.")
 
 async def apply_schema_changes_async(session: Session, table_name: str, model_schema: Dict[str, Any], db_schema: Dict[str, Any]) -> None:
@@ -509,10 +532,13 @@ async def apply_schema_changes_async(session: Session, table_name: str, model_sc
                 logger.warning(f"      - Operação manual necessária para: {mismatch}")
     
     # Verificar mudanças na chave primária (não suportado)
-    if model_schema['primary_keys'] != db_schema['primary_keys']:
-        mismatch = f"{db_schema['primary_keys']} -> {model_schema['primary_keys']}"
+    model_primary_keys = model_schema.get('primary_keys', [])
+    db_primary_keys = db_schema.get('primary_keys', [])
+    if model_primary_keys != db_primary_keys:
+        mismatch = f"{db_primary_keys} -> {model_primary_keys}"
         logger.error("\n  [!] ERRO CRÍTICO: A alteração de chave primária não é possível no Cassandra.")
         logger.error("      - A tabela deve ser recriada para aplicar esta mudança.")
+        raise RuntimeError("A alteração de chave primária não é possível no Cassandra.")
     
     logger.info("\n✅ Aplicação de schema concluída (ASSÍNCRONO).")
 
@@ -520,7 +546,13 @@ async def create_indexes_for_table_async(session: Session, table_name: str, mode
     """Cria os índices necessários para uma tabela (assíncrono)."""
     import asyncio
     
-    if not model_schema.get('indexes'):
+    # Verificar campos com índice
+    indexed_fields = []
+    for field_name, field_details in model_schema['fields'].items():
+        if field_details.get('index', False):
+            indexed_fields.append(field_name)
+    
+    if not indexed_fields:
         return
     
     keyspace = session.keyspace
@@ -531,7 +563,7 @@ async def create_indexes_for_table_async(session: Session, table_name: str, mode
     
     logger.info(f"Criando índices para a tabela '{table_name}' (ASSÍNCRONO)...")
     
-    for field_name in model_schema['indexes']:
+    for field_name in indexed_fields:
         index_name = f"{table_name}_{field_name}_idx"
         
         if index_name in existing_indexes:

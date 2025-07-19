@@ -15,9 +15,9 @@ if TYPE_CHECKING:
 
 async def _wait_for_cassandra_future(future):
     """Aguarda um ResponseFuture do Cassandra driver."""
-    # O ResponseFuture do Cassandra tem um método result() que bloqueia
-    # Vamos usar asyncio.to_thread para não bloquear o event loop
-    return await asyncio.to_thread(future.result)
+    # CORREÇÃO CRÍTICA: O ResponseFuture do Cassandra não é compatível com asyncio.wrap_future
+    # Precisamos usar o método .result() diretamente
+    return future.result()
 
 logger = logging.getLogger(__name__)
 
@@ -319,16 +319,39 @@ class QuerySet:
             # Se a query já foi executada, podemos deletar por chave primária
             count = 0
             for item in self._result_cache:
-                # CORRIGIDO: Usar delete assíncrono para cada item
                 await item.delete_async()
                 count += 1
             return count
         
-        # CORRIGIDO: Para deleção em lote, primeiro buscar os registros
-        # e depois deletá-los individualmente para evitar problemas com chaves de partição
-        try:
-            # Buscar todos os registros que correspondem aos filtros
-            items_to_delete = await self.all_async()
+        # CORREÇÃO CRÍTICA: Implementação mais eficiente
+        # Verificar se os filtros contêm todas as chaves de partição necessárias
+        schema = self.model_cls.__caspy_schema__
+        partition_keys = set(schema['partition_keys'])
+        filter_keys = set(self._filters.keys())
+        
+        # Se temos todas as chaves de partição, podemos fazer DELETE direto
+        if partition_keys.issubset(filter_keys):
+            session = get_async_session()
+            cql, params = query_builder.build_delete_cql(
+                self.model_cls.__caspy_schema__,
+                filters=self._filters
+            )
+            logger.debug(f"Executando DELETE direto (ASSÍNCRONO): {cql} com parâmetros: {params}")
+            prepared = session.prepare(cql)
+            future = session.execute_async(prepared, params)
+            await _wait_for_cassandra_future(future)
+            return 0  # Cassandra não retorna número de linhas deletadas
+        else:
+            # Se não temos todas as chaves de partição, precisamos buscar primeiro
+            # mas com LIMIT para evitar consumo excessivo de memória
+            logger.warning(
+                f"DELETE em lote sem chaves de partição completas. "
+                f"Chaves necessárias: {partition_keys}, filtros fornecidos: {filter_keys}"
+            )
+            
+            # Usar LIMIT para evitar carregar todos os registros na memória
+            limited_qs = self.limit(1000)  # Limite razoável
+            items_to_delete = await limited_qs.all_async()
             count = 0
             
             # Deletar cada item individualmente
@@ -336,20 +359,10 @@ class QuerySet:
                 await item.delete_async()
                 count += 1
             
+            if count == 1000:
+                logger.warning("Limite de 1000 registros atingido. Considere usar filtros mais específicos.")
+            
             return count
-        except Exception as e:
-            logger.error(f"Erro durante deleção em lote: {e}")
-            # Fallback: tentar deleção direta se os filtros contêm chaves de partição
-            session = get_async_session()
-            cql, params = query_builder.build_delete_cql(
-                self.model_cls.__caspy_schema__,
-                filters=self._filters
-            )
-            logger.debug(f"Executando DELETE (ASSÍNCRONO): {cql} com parâmetros: {params}")
-            prepared = session.prepare(cql)
-            future = session.execute_async(prepared, params)
-            await _wait_for_cassandra_future(future)
-            return 0  # Cassandra não retorna número de linhas deletadas
 
     def page(self, page_size: int = 100, paging_state: Any = None):
         """
@@ -381,12 +394,14 @@ class QuerySet:
         else:
             result_set = session.execute(statement)
         
-        # Processar apenas os resultados da página atual (limitado pelo fetch_size)
+        # CORREÇÃO: Limitar manualmente os resultados ao page_size
         resultados = []
-        for i, row in enumerate(result_set):
-            if i >= page_size:
+        count = 0
+        for row in result_set:
+            if count >= page_size:
                 break
             resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+            count += 1
             
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state
@@ -422,12 +437,14 @@ class QuerySet:
             future = session.execute_async(statement)
         result_set = await _wait_for_cassandra_future(future)
         
-        # Processar apenas os resultados da página atual (limitado pelo fetch_size)
+        # CORREÇÃO: Limitar manualmente os resultados ao page_size
         resultados = []
-        for i, row in enumerate(result_set):
-            if i >= page_size:
+        count = 0
+        for row in result_set:
+            if count >= page_size:
                 break
             resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+            count += 1
             
         next_paging_state = result_set.paging_state
         return resultados, next_paging_state

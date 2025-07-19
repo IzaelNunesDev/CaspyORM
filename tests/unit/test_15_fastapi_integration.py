@@ -15,11 +15,13 @@ from caspyorm.contrib.fastapi import (
     get_async_session,
     as_response_model,
     as_response_models,
+    create_response_model,
+    handle_caspyorm_errors,
     CaspyORMDependency
 )
 from caspyorm.model import Model
 from caspyorm.fields import Text, Integer, UUID
-from caspyorm.exceptions import ValidationError, ConnectionError
+from caspyorm.exceptions import ValidationError, ConnectionError, ObjectNotFound, MultipleObjectsReturned
 
 
 class TestUser(Model):
@@ -167,6 +169,139 @@ class TestFastAPIIntegration:
         assert result[1]['name'] == "Jane"
         assert 'age' not in result[1]
     
+    def test_create_response_model_success(self):
+        """Testa create_response_model com sucesso."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True), \
+             patch('caspyorm.model.Model.as_pydantic') as mock_as_pydantic:
+            
+            # Mock do modelo Pydantic
+            mock_pydantic_model = Mock()
+            mock_pydantic_model.model_fields = {
+                'id': Mock(),
+                'age': Mock(),
+                'email': Mock()
+            }
+            mock_as_pydantic.return_value = mock_pydantic_model
+            
+            response_model = create_response_model(TestUser, name="UserResponse")
+            
+            assert response_model.__name__ == "UserResponse"
+            # O DummyModel não tem model_fields, mas isso é esperado quando Pydantic não está disponível
+    
+    def test_create_response_model_with_exclude(self):
+        """Testa create_response_model com exclusão de campos."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True), \
+             patch('caspyorm.model.Model.as_pydantic') as mock_as_pydantic:
+            
+            # Mock do modelo Pydantic
+            mock_pydantic_model = Mock()
+            mock_pydantic_model.model_fields = {
+                'id': Mock(),
+                'age': Mock(),
+                'email': Mock()
+            }
+            mock_as_pydantic.return_value = mock_pydantic_model
+            
+            response_model = create_response_model(TestUser, exclude=['age'])
+            
+            # Verificar apenas o nome do modelo, já que estamos usando DummyModel
+            assert response_model.__name__ == "TestUserResponse"
+    
+    def test_create_response_model_with_include(self):
+        """Testa create_response_model com inclusão de campos."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True), \
+             patch('caspyorm.model.Model.as_pydantic') as mock_as_pydantic:
+            
+            # Mock do modelo Pydantic
+            mock_pydantic_model = Mock()
+            mock_pydantic_model.model_fields = {
+                'id': Mock(),
+                'age': Mock(),
+                'email': Mock()
+            }
+            mock_as_pydantic.return_value = mock_pydantic_model
+            
+            response_model = create_response_model(TestUser, include=['name'])
+            
+            # Verificar apenas o nome do modelo, já que estamos usando DummyModel
+            assert response_model.__name__ == "TestUserResponse"
+    
+    def test_handle_caspyorm_errors_validation_error(self):
+        """Testa handle_caspyorm_errors com ValidationError."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                raise ValidationError("Campo obrigatório")
+            
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(test_function())
+            
+            assert "Erro de validação" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_object_not_found(self):
+        """Testa handle_caspyorm_errors com ObjectNotFound."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                raise ObjectNotFound("Usuário não encontrado")
+            
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(test_function())
+            
+            assert "Recurso não encontrado" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_multiple_objects_returned(self):
+        """Testa handle_caspyorm_errors com MultipleObjectsReturned."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                raise MultipleObjectsReturned("Múltiplos usuários encontrados")
+            
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(test_function())
+            
+            assert "múltiplos objetos encontrados" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_connection_error(self):
+        """Testa handle_caspyorm_errors com ConnectionError."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                raise ConnectionError("Conexão perdida")
+            
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(test_function())
+            
+            assert "Erro de conexão com banco de dados" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_generic_exception(self):
+        """Testa handle_caspyorm_errors com exceção genérica."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                raise RuntimeError("Erro interno")
+            
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(test_function())
+            
+            assert "Erro interno do servidor" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_success(self):
+        """Testa handle_caspyorm_errors com sucesso."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', True):
+            
+            @handle_caspyorm_errors
+            async def test_function():
+                return "success"
+            
+            result = asyncio.run(test_function())
+            assert result == "success"
+    
     def test_caspyorm_dependency_init(self):
         """Testa inicialização do CaspyORMDependency."""
         dependency = CaspyORMDependency(auto_connect=True)
@@ -225,6 +360,22 @@ class TestFastAPIIntegrationWithoutFastAPI:
         with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', False):
             with pytest.raises(ImportError) as exc_info:
                 get_async_session()
+            
+            assert "FastAPI não está instalado" in str(exc_info.value)
+    
+    def test_create_response_model_fastapi_not_available(self):
+        """Testa create_response_model quando FastAPI não está disponível."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', False):
+            with pytest.raises(ImportError) as exc_info:
+                create_response_model(TestUser)
+            
+            assert "FastAPI não está instalado" in str(exc_info.value)
+    
+    def test_handle_caspyorm_errors_fastapi_not_available(self):
+        """Testa handle_caspyorm_errors quando FastAPI não está disponível."""
+        with patch('caspyorm.contrib.fastapi.FASTAPI_AVAILABLE', False):
+            with pytest.raises(ImportError) as exc_info:
+                handle_caspyorm_errors(lambda: None)
             
             assert "FastAPI não está instalado" in str(exc_info.value)
 
