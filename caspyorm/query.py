@@ -13,11 +13,7 @@ import asyncio
 if TYPE_CHECKING:
     from .model import Model
 
-async def _wait_for_cassandra_future(future):
-    """Aguarda um ResponseFuture do Cassandra driver."""
-    # CORREÇÃO CRÍTICA: O ResponseFuture do Cassandra não é compatível com asyncio.wrap_future
-    # Precisamos usar o método .result() diretamente
-    return future.result()
+from ._internal.operations import _wait_for_cassandra_future, _handle_cassandra_exception
 
 logger = logging.getLogger(__name__)
 
@@ -565,8 +561,7 @@ def save_instance(instance) -> None:
         session.execute(prepared, list(data.values()))
         logger.info(f"Instância salva na tabela '{table_name}'")
     except Exception as e:
-        logger.error(f"Erro ao salvar instância: {e}")
-        raise
+        _handle_cassandra_exception(e, "save operation")
 
 async def save_instance_async(instance) -> None:
     """Salva (insere ou atualiza) a instância no Cassandra (assíncrono)."""
@@ -593,8 +588,7 @@ async def save_instance_async(instance) -> None:
         await _wait_for_cassandra_future(future)
         logger.info(f"Instância salva na tabela '{table_name}' (ASSÍNCRONO)")
     except Exception as e:
-        logger.error(f"Erro ao salvar instância (async): {e}")
-        raise
+        _handle_cassandra_exception(e, "async save operation")
 
 def get_one(model_cls: Type["Model"], **kwargs: Any) -> Optional["Model"]:
     """Busca um único registro usando um QuerySet."""

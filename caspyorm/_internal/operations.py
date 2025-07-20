@@ -1,0 +1,111 @@
+# caspyorm/_internal/operations.py
+
+from typing import Any, Dict, List, Optional, Type
+import logging
+from cassandra import DriverException
+from cassandra.cluster import NoHostAvailable
+from cassandra.connection import ConnectionException
+from cassandra.query import BatchStatement, SimpleStatement
+from cassandra import ConsistencyLevel
+
+from ..exceptions import CaspyORMException, ValidationError
+from ..connection import get_session, get_async_session
+from . import query_builder
+
+logger = logging.getLogger(__name__)
+
+def _handle_cassandra_exception(e: Exception, operation: str) -> None:
+    """Trata exceções específicas do Cassandra e as converte em exceções do CaspyORM."""
+    if isinstance(e, (DriverException, NoHostAvailable, ConnectionException)):
+        raise CaspyORMException(f"Database operation failed during {operation}: {str(e)}") from e
+    else:
+        # Re-raise outras exceções como estão
+        raise
+
+def save_instance(instance) -> None:
+    """Salva (insere ou atualiza) uma instância no Cassandra (síncrono)."""
+    try:
+        # Validar chaves primárias antes de salvar
+        _validate_primary_keys(instance)
+        
+        # Construir query INSERT
+        cql = query_builder.build_insert_cql(instance.__caspy_schema__)
+        
+        # Preparar e executar
+        session = get_session()
+        prepared = session.prepare(cql)
+        session.execute(prepared, list(instance.model_dump().values()))
+        
+        logger.info(f"Instância salva: {instance.__class__.__name__}")
+        
+    except Exception as e:
+        _handle_cassandra_exception(e, "save operation")
+
+async def save_instance_async(instance) -> None:
+    """Salva (insere ou atualiza) uma instância no Cassandra (assíncrono)."""
+    try:
+        # Validar chaves primárias antes de salvar
+        _validate_primary_keys(instance)
+        
+        # Construir query INSERT
+        cql = query_builder.build_insert_cql(instance.__caspy_schema__)
+        
+        # Preparar e executar
+        session = get_async_session()
+        prepared = session.prepare(cql)
+        future = session.execute_async(prepared, list(instance.model_dump().values()))
+        future.result()  # Aguardar resultado
+        
+        logger.info(f"Instância salva (ASSÍNCRONO): {instance.__class__.__name__}")
+        
+    except Exception as e:
+        _handle_cassandra_exception(e, "async save operation")
+
+def get_one(model_cls: Type, **kwargs: Any) -> Optional[Any]:
+    """Busca um único registro (síncrono)."""
+    try:
+        from ..query import QuerySet
+        queryset = QuerySet(model_cls).filter(**kwargs).limit(1)
+        results = list(queryset)
+        return results[0] if results else None
+    except Exception as e:
+        _handle_cassandra_exception(e, "get_one operation")
+        return None
+
+async def get_one_async(model_cls: Type, **kwargs: Any) -> Optional[Any]:
+    """Busca um único registro (assíncrono)."""
+    try:
+        from ..query import QuerySet
+        queryset = QuerySet(model_cls).filter(**kwargs).limit(1)
+        results = await queryset.all_async()
+        return results[0] if results else None
+    except Exception as e:
+        _handle_cassandra_exception(e, "async get_one operation")
+        return None
+
+def filter_query(model_cls: Type, **kwargs: Any):
+    """Inicia uma query com filtros e retorna um QuerySet (síncrono)."""
+    from ..query import QuerySet
+    return QuerySet(model_cls).filter(**kwargs)
+
+def _validate_primary_keys(instance) -> None:
+    """Valida se as chaves primárias não são nulas antes de salvar."""
+    for pk_name in instance.__caspy_schema__['primary_keys']:
+        field = instance.model_fields[pk_name]
+        value = getattr(instance, pk_name, None)
+        
+        # Se o valor é None e o campo não tem valor padrão, é um erro
+        if value is None and field.default is None:
+            raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
+        
+        # Se o campo tem valor padrão mas ainda é None, aplicar o valor padrão
+        if value is None and field.default is not None:
+            default_value = field.default() if callable(field.default) else field.default
+            setattr(instance, pk_name, default_value)
+
+async def _wait_for_cassandra_future(future):
+    """Aguarda um ResponseFuture do Cassandra driver de forma segura."""
+    try:
+        return future.result()
+    except Exception as e:
+        _handle_cassandra_exception(e, "future operation") 

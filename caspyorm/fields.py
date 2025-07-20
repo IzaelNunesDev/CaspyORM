@@ -45,10 +45,12 @@ class BaseField:
         """Converte um valor vindo do Cassandra para um tipo Python."""
         if value is None:
             return None
-        try:
-            return self.python_type(value)
-        except (TypeError, ValueError) as e:
-            raise TypeError(f"Não foi possível converter {value!r} para {self.python_type.__name__}") from e
+        if not isinstance(value, self.python_type):
+            try:
+                return self.python_type(value)
+            except (TypeError, ValueError) as e:
+                raise TypeError(f"Não foi possível converter {value!r} para {self.python_type.__name__}: {e}") from e
+        return value
 
     def to_cql(self, value: Any) -> Any:
         """Converte um valor Python para um formato serializável pelo driver do Cassandra."""

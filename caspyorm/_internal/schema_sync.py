@@ -54,14 +54,14 @@ def get_cassandra_table_schema(session: Session, keyspace: str, table_name: str)
     Retorna None se a tabela não existir.
     """
     try:
-        # Consulta sem ORDER BY, pois Cassandra não permite ORDER BY em system_schema.columns
-        query = f"""
+        # Usar prepared statement para evitar SQL injection
+        query = """
             SELECT column_name, kind, type
             FROM system_schema.columns
-            WHERE keyspace_name = '{keyspace}'
-            AND table_name = '{table_name}'
+            WHERE keyspace_name = ? AND table_name = ?
         """
-        rows = session.execute(query)
+        prepared = session.prepare(query)
+        rows = session.execute(prepared, (keyspace, table_name))
         if not rows:
             return None
         
@@ -219,12 +219,13 @@ def build_create_index_cql(table_name: str, field_name: str) -> str:
 def get_existing_indexes(session: Session, keyspace: str, table_name: str) -> set:
     """Obtém os índices existentes para uma tabela."""
     try:
-        query = f"""
+        # Usar prepared statement para evitar SQL injection
+        query = """
             SELECT index_name FROM system_schema.indexes
-            WHERE keyspace_name = '{keyspace}'
-            AND table_name = '{table_name}'
+            WHERE keyspace_name = ? AND table_name = ?
         """
-        result = session.execute(query)
+        prepared = session.prepare(query)
+        result = session.execute(prepared, (keyspace, table_name))
         return {row.index_name for row in result}
     except Exception as e:
         logger.warning(f"Erro ao obter índices existentes: {e}")

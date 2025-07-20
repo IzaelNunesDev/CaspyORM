@@ -8,7 +8,8 @@ import logging
 from ._internal.model_construction import ModelMetaclass
 from ._internal.schema_sync import sync_table
 from ._internal.serialization import generate_pydantic_model, model_to_dict, model_to_json
-from .query import QuerySet, get_one, filter_query, save_instance
+from .query import QuerySet
+from ._internal.operations import get_one, filter_query, save_instance
 from caspyorm.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -61,21 +62,14 @@ class Model(metaclass=ModelMetaclass):
         return model_to_json(self, by_alias=by_alias, indent=indent)
 
     def save(self) -> Self:
-        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao salvar.
-        for pk_name in self.__caspy_schema__['primary_keys']:
-            if getattr(self, pk_name, None) is None:
-                raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
+        # A validação de chaves primárias agora é feita no módulo operations
         save_instance(self)
         return self
 
     async def save_async(self) -> Self:
         """Salva (insere ou atualiza) a instância no Cassandra (assíncrono)."""
-        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao salvar.
-        for pk_name in self.__caspy_schema__['primary_keys']:
-            if getattr(self, pk_name, None) is None:
-                raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
-        
-        from .query import save_instance_async
+        # A validação de chaves primárias agora é feita no módulo operations
+        from ._internal.operations import save_instance_async
         await save_instance_async(self)
         return self
 
@@ -124,8 +118,8 @@ class Model(metaclass=ModelMetaclass):
             session.execute(prepared, params)
             logger.info(f"Instância atualizada: {self.__class__.__name__} com campos: {list(validated_data.keys())}")
         except Exception as e:
-            logger.error(f"Erro ao atualizar instância: {e}")
-            raise
+            from ._internal.operations import _handle_cassandra_exception
+            _handle_cassandra_exception(e, "update operation")
         
         return self
 
@@ -174,8 +168,8 @@ class Model(metaclass=ModelMetaclass):
             session.execute_async(prepared, params).result()
             logger.info(f"Instância atualizada (ASSÍNCRONO): {self.__class__.__name__} com campos: {list(validated_data.keys())}")
         except Exception as e:
-            logger.error(f"Erro ao atualizar instância (async): {e}")
-            raise
+            from ._internal.operations import _handle_cassandra_exception
+            _handle_cassandra_exception(e, "async update operation")
         
         return self
 
@@ -332,8 +326,8 @@ class Model(metaclass=ModelMetaclass):
             session.execute(prepared, params)
             logger.info(f"Coleção '{field_name}' atualizada para a instância: {self}")
         except Exception as e:
-            logger.error(f"Erro ao atualizar coleção: {e}")
-            raise
+            from ._internal.operations import _handle_cassandra_exception
+            _handle_cassandra_exception(e, "collection update operation")
         return self
 
     async def update_collection_async(self, field_name: str, add: Any = None, remove: Any = None) -> Self:
@@ -363,16 +357,16 @@ class Model(metaclass=ModelMetaclass):
             pk_filters={pk: getattr(self, pk) for pk in self.__caspy_schema__['primary_keys']}
         )
         try:
-            import asyncio
             from .connection import get_async_session
+            from ._internal.operations import _wait_for_cassandra_future
             session = get_async_session()
             prepared = session.prepare(cql)
             future = session.execute_async(prepared, params)
-            await asyncio.wrap_future(future)
+            await _wait_for_cassandra_future(future)
             logger.info(f"Coleção '{field_name}' atualizada para a instância (ASSÍNCRONO): {self}")
         except Exception as e:
-            logger.error(f"Erro ao atualizar coleção (ASSÍNCRONO): {e}")
-            raise
+            from ._internal.operations import _handle_cassandra_exception
+            _handle_cassandra_exception(e, "async collection update operation")
         return self
 
     @classmethod
