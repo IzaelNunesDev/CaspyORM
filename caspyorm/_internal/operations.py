@@ -1,5 +1,6 @@
 # caspyorm/_internal/operations.py
 
+import asyncio
 from typing import Any, Dict, List, Optional, Type
 import logging
 from cassandra import DriverException
@@ -41,7 +42,7 @@ def save_instance(instance) -> None:
     except Exception as e:
         _handle_cassandra_exception(e, "save operation")
 
-async def save_instance_async(instance) -> None:
+async def save_instance_async(instance, timeout: int = 30) -> None:
     """Salva (insere ou atualiza) uma instância no Cassandra (assíncrono)."""
     try:
         # Validar chaves primárias antes de salvar
@@ -54,10 +55,14 @@ async def save_instance_async(instance) -> None:
         session = get_async_session()
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, list(instance.model_dump().values()))
-        future.result()  # Aguardar resultado
+        
+        # Aguardar resultado com timeout
+        await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=timeout)
         
         logger.info(f"Instância salva (ASSÍNCRONO): {instance.__class__.__name__}")
         
+    except asyncio.TimeoutError:
+        raise CaspyORMException(f"Database operation timed out after {timeout} seconds during async save operation")
     except Exception as e:
         _handle_cassandra_exception(e, "async save operation")
 
@@ -94,8 +99,16 @@ def _validate_primary_keys(instance) -> None:
         field = instance.model_fields[pk_name]
         value = getattr(instance, pk_name, None)
         
-        # Se o valor é None e o campo não tem valor padrão, é um erro
-        if value is None and field.default is None:
+        # Verificar se é um campo UUID com valor padrão automático
+        from ..fields import UUID
+        is_uuid_with_auto_default = (
+            isinstance(field, UUID) and 
+            field.primary_key and 
+            field.default is not None
+        )
+        
+        # Se o valor é None e o campo não tem valor padrão (exceto UUIDs automáticos), é um erro
+        if value is None and field.default is None and not is_uuid_with_auto_default:
             raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
         
         # Se o campo tem valor padrão mas ainda é None, aplicar o valor padrão
@@ -104,8 +117,10 @@ def _validate_primary_keys(instance) -> None:
             setattr(instance, pk_name, default_value)
 
 async def _wait_for_cassandra_future(future):
-    """Aguarda um ResponseFuture do Cassandra driver de forma segura."""
+    """Aguarda um ResponseFuture do Cassandra driver de forma não-bloqueante."""
+    import asyncio
     try:
-        return future.result()
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, future.result)
     except Exception as e:
         _handle_cassandra_exception(e, "future operation") 

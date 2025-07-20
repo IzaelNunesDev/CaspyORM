@@ -178,6 +178,11 @@ class List(BaseField):
             if self.required:
                 raise ValueError(f"Campo é obrigatório mas recebeu None")
             return []  # Retorna lista vazia por conveniência
+        
+        # Validar que o valor é uma lista ou tupla
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"Expected list or tuple, got {type(value).__name__}")
+        
         result = []
         for item in value:
             try:
@@ -225,6 +230,16 @@ class Set(BaseField):
             if self.required:
                 raise ValueError(f"Campo é obrigatório mas recebeu None")
             return set()
+        
+        # Validar que o valor é um set, SortedSet ou iterável
+        if not isinstance(value, (set, list, tuple)):
+            # Verificar se é um SortedSet (tipo retornado pelo Cassandra)
+            if hasattr(value, '__iter__') and hasattr(value, 'add'):
+                # É um tipo similar a set, aceitar
+                pass
+            else:
+                raise TypeError(f"Expected set, list or tuple, got {type(value).__name__}")
+        
         result = set()
         for item in value:
             try:
@@ -271,6 +286,16 @@ class Map(BaseField):
             if self.required:
                 raise ValueError(f"Campo é obrigatório mas recebeu None")
             return {}
+        
+        # Validar que o valor é um dicionário ou tipo similar
+        if not isinstance(value, dict):
+            # Verificar se é um tipo similar a dict (retornado pelo Cassandra)
+            if hasattr(value, 'items') and hasattr(value, '__iter__'):
+                # É um tipo similar a dict, aceitar
+                pass
+            else:
+                raise TypeError(f"Expected dict, got {type(value).__name__}")
+        
         result = {}
         for k, v in value.items():
             try:
