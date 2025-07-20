@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .model import Model
 
 from ._internal.operations import _wait_for_cassandra_future, _handle_cassandra_exception
+from ._internal.cache import prepared_statement_cache
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,14 @@ class QuerySet:
     Representa uma query preguiçosa (lazy) que pode ser encadeada.
     Suporta operações síncronas e assíncronas.
     """
-    def __init__(self, model_cls: Type["Model"]):
+    def __init__(self, model_cls: Type["Model"], timeout: int = 30):
         self.model_cls = model_cls
         self._filters: Dict[str, Any] = {}
         self._limit: Optional[int] = None
         self._ordering: List[str] = []  # NOVO: lista de campos para ordenação
         self._allow_filtering: bool = False  # NOVO: flag para ALLOW FILTERING
         self._result_cache: Optional[List["Model"]] = None
+        self._timeout: int = timeout  # NOVO: timeout configurável
 
     def __iter__(self):
         """Executa a query quando o queryset é iterado (síncrono)."""
@@ -56,7 +58,7 @@ class QuerySet:
 
     def _clone(self) -> Self:
         """Cria um clone do QuerySet atual para permitir o encadeamento."""
-        new_qs = self.__class__(self.model_cls)
+        new_qs = self.__class__(self.model_cls, timeout=self._timeout)
         new_qs._filters = self._filters.copy()
         new_qs._limit = self._limit
         new_qs._ordering = self._ordering[:]  # NOVO: copiar lista de ordenação
@@ -74,8 +76,11 @@ class QuerySet:
             allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_session()
-        # Sempre preparar a query para garantir suporte a parâmetros posicionais
-        prepared = session.prepare(cql)
+        # Usar cache de prepared statements
+        prepared = prepared_statement_cache.get(cql)
+        if prepared is None:
+            prepared = session.prepare(cql)
+            prepared_statement_cache.set(cql, prepared)
         result_set = session.execute(prepared, params)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         logger.debug(f"Executando query (SÍNCRONO): {cql} com parâmetros: {params}")
@@ -91,10 +96,13 @@ class QuerySet:
             allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
         )
         session = get_async_session()
-        # Preparar a query de forma síncrona, executar de forma assíncrona
-        prepared = session.prepare(cql)
+        # Usar cache de prepared statements
+        prepared = prepared_statement_cache.get(cql)
+        if prepared is None:
+            prepared = session.prepare(cql)
+            prepared_statement_cache.set(cql, prepared)
         future = session.execute_async(prepared, params)
-        result_set = await _wait_for_cassandra_future(future)
+        result_set = await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=self._timeout)
         self._result_cache = [_map_row_to_instance(self.model_cls, row._asdict()) for row in result_set]
         logger.debug(f"Executando query (ASSÍNCRONO): {cql} com parâmetros: {params}")
 
@@ -218,7 +226,7 @@ class QuerySet:
         session = get_async_session()
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, params)
-        result_set = await _wait_for_cassandra_future(future)
+        result_set = await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=self._timeout)
         
         # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
         row = result_set.one()
@@ -274,7 +282,7 @@ class QuerySet:
         session = get_async_session()
         prepared = session.prepare(cql)
         future = session.execute_async(prepared, params)
-        result_set = await _wait_for_cassandra_future(future)
+        result_set = await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=self._timeout)
         
         # Se .one() retornar uma linha, significa que existe. Se retornar None, não existe.
         return result_set.one() is not None

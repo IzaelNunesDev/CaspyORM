@@ -86,6 +86,24 @@ class UUID(BaseField):
         if kwargs.get('primary_key', False) and 'default' not in kwargs:
             kwargs['default'] = lambda: uuid.uuid4()
         super().__init__(**kwargs)
+    
+    def to_python(self, value: Any) -> Any:
+        """Converte um valor para UUID com validação de formato."""
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return value
+        if isinstance(value, str):
+            try:
+                return uuid.UUID(value)
+            except ValueError:
+                raise TypeError(f"Invalid UUID format: {value}")
+        if isinstance(value, bytes):
+            try:
+                return uuid.UUID(bytes=value)
+            except ValueError:
+                raise TypeError(f"Invalid UUID bytes: {value}")
+        raise TypeError(f"Não foi possível converter {value!r} para UUID")
 
 class Integer(BaseField):
     cql_type = 'int'

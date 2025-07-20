@@ -32,9 +32,12 @@ try:
 except ImportError:
     PYDANTIC_V2 = False
     # Definir stubs para evitar erros se pydantic não estiver instalado
-    class BaseModel: pass
-    def create_model(*args, **kwargs): return None
-    def Field(*args, **kwargs): pass
+    class BaseModel: 
+        pass
+    def create_model(*args, **kwargs): 
+        return None
+    def Field(*args, **kwargs): 
+        pass
     ConfigDict = None
     FieldInfo = None
 
@@ -91,7 +94,9 @@ def generate_pydantic_model(
         # Usa o método get_pydantic_type() que implementamos nos fields
         try:
             python_type = field_obj.get_pydantic_type()
-        except (ImportError, TypeError) as e:
+        except ImportError as e:
+            raise ImportError(f"Pydantic é necessário para esta funcionalidade. Erro: {e}") from e
+        except TypeError as e:
             logger.warning(f"Não foi possível obter o tipo Pydantic para o campo '{field_name}'. Erro: {e}")
             continue
         

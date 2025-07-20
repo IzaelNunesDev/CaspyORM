@@ -12,6 +12,7 @@ from cassandra import ConsistencyLevel
 from ..exceptions import CaspyORMException, ValidationError
 from ..connection import get_session, get_async_session
 from . import query_builder
+from .cache import prepared_statement_cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,12 @@ def save_instance(instance) -> None:
         # Construir query INSERT
         cql = query_builder.build_insert_cql(instance.__caspy_schema__)
         
-        # Preparar e executar
+        # Preparar e executar com cache
         session = get_session()
-        prepared = session.prepare(cql)
+        prepared = prepared_statement_cache.get(cql)
+        if prepared is None:
+            prepared = session.prepare(cql)
+            prepared_statement_cache.set(cql, prepared)
         session.execute(prepared, list(instance.model_dump().values()))
         
         logger.info(f"Instância salva: {instance.__class__.__name__}")
@@ -51,9 +55,12 @@ async def save_instance_async(instance, timeout: int = 30) -> None:
         # Construir query INSERT
         cql = query_builder.build_insert_cql(instance.__caspy_schema__)
         
-        # Preparar e executar
+        # Preparar e executar com cache
         session = get_async_session()
-        prepared = session.prepare(cql)
+        prepared = prepared_statement_cache.get(cql)
+        if prepared is None:
+            prepared = session.prepare(cql)
+            prepared_statement_cache.set(cql, prepared)
         future = session.execute_async(prepared, list(instance.model_dump().values()))
         
         # Aguardar resultado com timeout
@@ -95,6 +102,10 @@ def filter_query(model_cls: Type, **kwargs: Any):
 
 def _validate_primary_keys(instance) -> None:
     """Valida se as chaves primárias não são nulas antes de salvar."""
+    # Verificar se o modelo tem chaves primárias definidas
+    if not instance.__caspy_schema__['primary_keys']:
+        raise ValidationError("Modelo deve ter pelo menos uma chave primária")
+    
     for pk_name in instance.__caspy_schema__['primary_keys']:
         field = instance.model_fields[pk_name]
         value = getattr(instance, pk_name, None)

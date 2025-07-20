@@ -106,7 +106,7 @@ def measure_performance(func):
     
     return wrapper
 
-async def measure_performance_async(func):
+def measure_performance_async(func):
     """Decorator para medir performance de operações assíncronas."""
     import time
     from functools import wraps

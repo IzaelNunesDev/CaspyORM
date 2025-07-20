@@ -228,6 +228,7 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def filter(cls, **kwargs: Any) -> "QuerySet":
         """Inicia uma query com filtros e retorna um QuerySet."""
+        # Importação tardia para evitar importação circular
         from .query import QuerySet
         return QuerySet(cls).filter(**kwargs)
 
