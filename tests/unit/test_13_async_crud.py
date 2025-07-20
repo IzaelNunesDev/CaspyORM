@@ -16,7 +16,7 @@ from caspyorm.exceptions import ValidationError
 
 class TestUser(Model):
     __table_name__ = "test_users"
-    id = UUID(primary_key=True)
+    id = UUID(primary_key=True, default=None)  # Sem valor padrão para testar validação
     name = Text()
     email = Text()
     age = Integer(required=False)
@@ -32,6 +32,9 @@ def mock_async_session():
     ), patch.multiple(
         'caspyorm.connection',
         get_async_session=MagicMock()
+    ), patch.multiple(
+        'caspyorm._internal.operations',
+        get_async_session=MagicMock()
     ):
         # Criar mock da sessão
         session = MagicMock()
@@ -41,9 +44,11 @@ def mock_async_session():
         # Configurar o mock para retornar a sessão
         from caspyorm.query import get_async_session as query_get_session
         from caspyorm.connection import get_async_session as conn_get_session
+        from caspyorm._internal.operations import get_async_session as ops_get_session
         
         query_get_session.return_value = session
         conn_get_session.return_value = session
+        ops_get_session.return_value = session
         
         yield session
 
@@ -93,7 +98,7 @@ class TestAsyncCRUD:
         mock_async_session.execute_async.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_save_async_without_primary_key(self):
+    async def test_save_async_without_primary_key(self, mock_async_session):
         """Testa que save_async levanta ValidationError se a chave primária for nula."""
         # Instanciamos primeiro para depois setar o id como None, bypassando o default do __init__
         user = TestUser(name="Incomplete User")

@@ -30,15 +30,31 @@ class ConnectionPool:
         keyspace: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        connection_timeout: int = 10,
+        request_timeout: int = 10,
         **kwargs: Any
     ) -> None:
-        """Configura o pool de conexões."""
+        """
+        Configura o pool de conexões.
+        
+        Args:
+            contact_points: Lista de pontos de contato do Cassandra
+            port: Porta do Cassandra
+            keyspace: Keyspace a ser usado
+            username: Nome de usuário para autenticação
+            password: Senha para autenticação
+            connection_timeout: Timeout para estabelecer conexão (segundos)
+            request_timeout: Timeout para requisições (segundos)
+            **kwargs: Configurações adicionais do cluster
+        """
         self._connection_config = {
             'contact_points': contact_points,
             'port': port,
             'keyspace': keyspace,
             'username': username,
             'password': password,
+            'connection_timeout': connection_timeout,
+            'request_timeout': request_timeout,
             **kwargs
         }
         
@@ -75,7 +91,8 @@ class ConnectionPool:
                     # Configurações de pool de conexões
                     'max_schema_agreement_wait': 30,
                     # Configurações de timeout
-                    'connect_timeout': 10,
+                    'connect_timeout': self._connection_config.get('connection_timeout', 10),
+                    'request_timeout': self._connection_config.get('request_timeout', 10),
                 }
                 
                 # Adicionar configurações extras

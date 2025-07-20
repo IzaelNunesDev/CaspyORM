@@ -1,6 +1,6 @@
 # caspyorm/model.py (REVISADO)
 
-from typing import Any, ClassVar, Dict, Optional, List, Type
+from typing import Any, ClassVar, Dict, Optional, List, Type, TYPE_CHECKING
 from typing_extensions import Self
 import json
 import logging
@@ -8,9 +8,11 @@ import logging
 from ._internal.model_construction import ModelMetaclass
 from ._internal.schema_sync import sync_table
 from ._internal.serialization import generate_pydantic_model, model_to_dict, model_to_json
-from .query import QuerySet
 from ._internal.operations import get_one, filter_query, save_instance
 from caspyorm.exceptions import ValidationError
+
+if TYPE_CHECKING:
+    from .query import QuerySet
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +199,7 @@ class Model(metaclass=ModelMetaclass):
             return []
         
         # Delega a lógica para um método do QuerySet
+        from .query import QuerySet
         return QuerySet(cls).bulk_create(instances)
 
     @classmethod
@@ -207,6 +210,7 @@ class Model(metaclass=ModelMetaclass):
         Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
         """
         # Delega a lógica para um método do QuerySet
+        from .query import QuerySet
         return await QuerySet(cls).bulk_create_async(instances)
 
     @classmethod
@@ -222,13 +226,15 @@ class Model(metaclass=ModelMetaclass):
         return await get_one_async(cls, **kwargs)
 
     @classmethod
-    def filter(cls, **kwargs: Any) -> QuerySet:
+    def filter(cls, **kwargs: Any) -> "QuerySet":
         """Inicia uma query com filtros e retorna um QuerySet."""
+        from .query import QuerySet
         return QuerySet(cls).filter(**kwargs)
 
     @classmethod
-    def all(cls) -> QuerySet:
+    def all(cls) -> "QuerySet":
         """Retorna um QuerySet para todos os registros da tabela."""
+        from .query import QuerySet
         return QuerySet(cls)
 
     # --- Pydantic & FastAPI Integração ---
@@ -397,6 +403,16 @@ class Model(metaclass=ModelMetaclass):
             )
         """
         from .fields import BaseField
+        
+        # Validação de tipos
+        if not isinstance(fields, dict):
+            raise TypeError("fields deve ser um dicionário")
+        
+        if not isinstance(name, str):
+            raise TypeError("name deve ser uma string")
+        
+        if table_name is not None and not isinstance(table_name, str):
+            raise TypeError("table_name deve ser uma string ou None")
         
         # Validar que todos os campos são instâncias de BaseField
         for field_name, field_obj in fields.items():

@@ -53,7 +53,10 @@ def model_to_dict(instance: "Model", by_alias: bool = False) -> Dict[str, Any]:
     # `by_alias` será usado no futuro
     data = {}
     for key in instance.model_fields.keys():
-        data[key] = getattr(instance, key, None)
+        try:
+            data[key] = getattr(instance, key, None)
+        except AttributeError:
+            data[key] = None
     return data
 
 def model_to_json(instance: "Model", by_alias: bool = False, indent: Optional[int] = None) -> str:

@@ -57,6 +57,11 @@ class ModelMetaclass(type):
         from ..query import QuerySet
         from ..model import Model
         from typing import cast
+        
+        # Validação antes do cast para garantir que new_class é realmente uma subclasse de Model
+        if not isinstance(new_class, type) or not issubclass(new_class, Model):
+            raise TypeError(f"A classe '{name}' deve ser uma subclasse de Model")
+        
         setattr(new_class, 'objects', QuerySet(cast(type[Model], new_class)))
         
         return new_class

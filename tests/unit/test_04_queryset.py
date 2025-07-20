@@ -32,15 +32,17 @@ def test_order_by_desc(funcionarios_data):
     resultado = Funcionario.filter(setor="Engenharia").order_by("-salario").all()
     assert [f.salario for f in resultado] == [9500, 7000]
 
-def test_lazy_evaluation(funcionarios_data, capsys):
+def test_lazy_evaluation(funcionarios_data):
+    """Testa que a avaliação lazy funciona corretamente."""
     qs = Funcionario.filter(setor="Engenharia")
-    # Nenhum print de "EXECUTADO" deve aparecer ainda
-    captured = capsys.readouterr()
-    assert "EXECUTADO" not in captured.out
+    # O QuerySet não deve ter resultados ainda (lazy evaluation)
+    assert qs._result_cache is None
     
-    list(qs) # Força a execução
-    captured = capsys.readouterr()
-    assert "EXECUTADO" in captured.out
+    # Força a execução
+    results = list(qs)
+    # Agora deve ter resultados
+    assert len(results) == 2
+    assert qs._result_cache is not None
 
 def test_filter_com_operadores(session):
     session.execute(f"DROP TABLE IF EXISTS {Funcionario.__table_name__}")

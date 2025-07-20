@@ -116,30 +116,44 @@ class TestImprovements:
             )
     
     @pytest.mark.asyncio
-    async def test_save_async_uses_save_instance_async(self, monkeypatch):
+    async def test_save_async_uses_save_instance_async(self):
         """Testa se save_async() usa save_instance_async() internamente."""
         UserModel = self.test_create_model_dynamic()
         
-        # Mock da função save_instance_async
-        async def mock_save_instance_async(instance):
-            # Simular salvamento bem-sucedido
-            pass
+        # Mockar get_async_session para evitar conexão real
+        from unittest.mock import patch, MagicMock
+        from asyncio import Future
         
-        # Aplicar o mock
-        import caspyorm.query
-        monkeypatch.setattr(caspyorm.query, "save_instance_async", mock_save_instance_async)
+        # Criar mock da sessão
+        session = MagicMock()
+        prepared_statement = MagicMock()
+        session.prepare.return_value = prepared_statement
         
-        # Criar instância
-        user = UserModel(
-            id=uuid.uuid4(),
-            name="Test User",
-            email="test@example.com"
-        )
+        # Criar Future mock
+        future = Future()
+        future.set_result(None)
+        session.execute_async.return_value = future
         
-        # Chamar save_async (não deve levantar exceção)
-        await user.save_async()
-        
-        # Se chegou até aqui, significa que save_instance_async foi chamado
+        with patch.multiple(
+            'caspyorm.connection',
+            get_async_session=MagicMock(return_value=session)
+        ), patch.multiple(
+            'caspyorm._internal.operations',
+            get_async_session=MagicMock(return_value=session)
+        ):
+            # Criar instância
+            user = UserModel(
+                id=uuid.uuid4(),
+                name="Test User",
+                email="test@example.com"
+            )
+            
+            # Chamar save_async (não deve levantar exceção)
+            await user.save_async()
+            
+            # Verificar se o mock foi chamado
+            session.prepare.assert_called_once()
+            session.execute_async.assert_called_once()
     
     def test_create_model_with_custom_table_name(self):
         """Testa a criação de modelo com nome de tabela customizado."""

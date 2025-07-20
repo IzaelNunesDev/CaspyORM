@@ -1,6 +1,6 @@
 # caspyorm/query.py (REVISADO E AMPLIADO)
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 from typing_extensions import Self
 from caspyorm.connection import get_session, get_async_session, execute
 from caspyorm._internal import query_builder
@@ -8,8 +8,8 @@ from cassandra.query import BatchStatement, SimpleStatement
 from cassandra import ConsistencyLevel
 import logging
 import warnings
-from typing import TYPE_CHECKING
 import asyncio
+
 if TYPE_CHECKING:
     from .model import Model
 
@@ -37,7 +37,7 @@ class QuerySet:
     def __iter__(self):
         """Executa a query quando o queryset é iterado (síncrono)."""
         if self._result_cache is None:
-            print("EXECUTADO")
+            logger.debug("Query executada")
             self._execute_query()
         return iter(self._result_cache or [])
 
