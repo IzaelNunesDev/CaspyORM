@@ -103,13 +103,12 @@ def filter_query(model_cls: Type, **kwargs: Any):
 def _validate_primary_keys(instance) -> None:
     """Valida se as chaves primárias não são nulas antes de salvar."""
     # Verificar se o modelo tem chaves primárias definidas
-    if not instance.__caspy_schema__['primary_keys']:
+    primary_keys = instance.__caspy_schema__.get('primary_keys')
+    if not primary_keys:
         raise ValidationError("Modelo deve ter pelo menos uma chave primária")
-    
-    for pk_name in instance.__caspy_schema__['primary_keys']:
+    for pk_name in primary_keys:
         field = instance.model_fields[pk_name]
         value = getattr(instance, pk_name, None)
-        
         # Verificar se é um campo UUID com valor padrão automático
         from ..fields import UUID
         is_uuid_with_auto_default = (
@@ -117,21 +116,26 @@ def _validate_primary_keys(instance) -> None:
             field.primary_key and 
             field.default is not None
         )
-        
         # Se o valor é None e o campo não tem valor padrão (exceto UUIDs automáticos), é um erro
         if value is None and field.default is None and not is_uuid_with_auto_default:
             raise ValidationError(f"Primary key '{pk_name}' cannot be None before saving.")
-        
         # Se o campo tem valor padrão mas ainda é None, aplicar o valor padrão
         if value is None and field.default is not None:
             default_value = field.default() if callable(field.default) else field.default
             setattr(instance, pk_name, default_value)
 
 async def _wait_for_cassandra_future(future):
-    """Aguarda um ResponseFuture do Cassandra driver de forma não-bloqueante."""
+    """Aguarda um ResponseFuture do Cassandra driver de forma não-bloqueante, evitando deadlocks.
+    Usa asyncio.to_thread (Python 3.9+) para evitar problemas de event loop.
+    """
     import asyncio
     try:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, future.result)
+        if hasattr(asyncio, 'to_thread'):
+            # Python 3.9+: mais seguro, evita deadlocks
+            return await asyncio.to_thread(future.result)
+        else:
+            # Compatibilidade com versões anteriores
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, future.result)
     except Exception as e:
         _handle_cassandra_exception(e, "future operation") 

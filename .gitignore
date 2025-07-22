@@ -44,6 +44,7 @@ htmlcov/
 .cache
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .dmypy.json
 dmypy.json
 
@@ -58,4 +59,18 @@ venv.bak/
 
 # IDE files
 .idea/
-.vscode/ 
+.vscode/
+
+# Astra DB / Test files
+secure-connect-*.zip
+*token.json
+ca.crt
+cert
+key
+cert.pfx
+config.json
+cqlshrc
+identity.jks
+trustStore.jks
+test_astra_connection.py
+pure_driver_test.py 

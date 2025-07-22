@@ -25,7 +25,7 @@ class Model(metaclass=ModelMetaclass):
 
     # --- Métodos de API Pública ---
     def __init__(self, **kwargs: Any):
-        self.__dict__["_data"] = {}
+        setattr(self, "_data", {})
         for key, field_obj in self.model_fields.items():
             value = kwargs.get(key)
             if value is None and field_obj.default is not None:
@@ -49,11 +49,11 @@ class Model(metaclass=ModelMetaclass):
                     raise TypeError(str(e))
             elif value is not None and not isinstance(value, field_obj.python_type):
                 value = field_obj.to_python(value)
-            self.__dict__[key] = value
+            setattr(self, key, value)
 
     def __setattr__(self, key: str, value: Any):
-        if key in self.model_fields:
-            self.__dict__[key] = value
+        if hasattr(self, 'model_fields') and key in getattr(self, 'model_fields', {}):
+            object.__setattr__(self, key, value)
         else:
             super().__setattr__(key, value)
 
@@ -68,11 +68,11 @@ class Model(metaclass=ModelMetaclass):
         save_instance(self)
         return self
 
-    async def save_async(self) -> Self:
+    async def save_async(self, timeout: int = 30) -> Self:
         """Salva (insere ou atualiza) a instância no Cassandra (assíncrono)."""
         # A validação de chaves primárias agora é feita no módulo operations
         from ._internal.operations import save_instance_async
-        await save_instance_async(self)
+        await save_instance_async(self, timeout=timeout)
         return self
 
     def update(self, **kwargs: Any) -> Self:
@@ -197,20 +197,19 @@ class Model(metaclass=ModelMetaclass):
         """
         if not instances:
             return []
-        
-        # Delega a lógica para um método do QuerySet
-        from .query import QuerySet
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
         return QuerySet(cls).bulk_create(instances)
 
     @classmethod
     async def bulk_create_async(cls, instances: List["Model"]) -> List["Model"]:
         """
-        Insere uma lista de instâncias de modelo em lote usando um UNLOGGED BATCH
-        para máxima performance (assíncrono). As instâncias são modificadas no local.
-        Nota: Validações de Primary Key devem ser feitas antes de chamar este método.
+        Insere uma lista de instâncias de modelo em lote (assíncrono).
         """
-        # Delega a lógica para um método do QuerySet
-        from .query import QuerySet
+        if not instances:
+            return []
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
         return await QuerySet(cls).bulk_create_async(instances)
 
     @classmethod
@@ -227,15 +226,20 @@ class Model(metaclass=ModelMetaclass):
 
     @classmethod
     def filter(cls, **kwargs: Any) -> "QuerySet":
-        """Inicia uma query com filtros e retorna um QuerySet."""
-        # Importação tardia para evitar importação circular
-        from .query import QuerySet
+        """
+        Inicia uma query com filtros e retorna um QuerySet.
+        """
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
         return QuerySet(cls).filter(**kwargs)
 
     @classmethod
     def all(cls) -> "QuerySet":
-        """Retorna um QuerySet para todos os registros da tabela."""
-        from .query import QuerySet
+        """
+        Retorna um QuerySet para todos os registros da tabela.
+        """
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
         return QuerySet(cls)
 
     # --- Pydantic & FastAPI Integração ---
@@ -265,38 +269,16 @@ class Model(metaclass=ModelMetaclass):
         return f"{self.__class__.__name__}({attrs})"
 
     def delete(self) -> None:
-        """Deleta esta instância específica do banco de dados."""
-        pk_fields = self.__caspy_schema__['primary_keys']
-        if not pk_fields:
-            raise RuntimeError("Não é possível deletar um modelo sem chave primária.")
-        
-        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao deletar.
-        pk_filters = {}
-        for field in pk_fields:
-            value = getattr(self, field, None)
-            if value is None:
-                raise ValidationError(f"Primary key '{field}' is required to delete, but was None.")
-            pk_filters[field] = value
-        
-        from .query import QuerySet
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
+        pk_filters = {pk: getattr(self, pk) for pk in self.__caspy_schema__["primary_keys"]}
         QuerySet(self.__class__).filter(**pk_filters).delete()
         logger.info(f"Instância deletada: {self}")
 
     async def delete_async(self) -> None:
-        """Deleta esta instância específica do banco de dados (assíncrono)."""
-        pk_fields = self.__caspy_schema__['primary_keys']
-        if not pk_fields:
-            raise RuntimeError("Não é possível deletar um modelo sem chave primária.")
-        
-        # VALIDAÇÃO ADICIONADA: Garante que as chaves primárias não são nulas ao deletar.
-        pk_filters = {}
-        for field in pk_fields:
-            value = getattr(self, field, None)
-            if value is None:
-                raise ValidationError(f"Primary key '{field}' is required to delete, but was None.")
-            pk_filters[field] = value
-        
-        from .query import QuerySet
+        # Importação local para evitar importação circular com QuerySet
+        from .query import QuerySet  # Importação local necessária e segura
+        pk_filters = {pk: getattr(self, pk) for pk in self.__caspy_schema__["primary_keys"]}
         await QuerySet(self.__class__).filter(**pk_filters).delete_async()
         logger.info(f"Instância deletada (ASSÍNCRONO): {self}")
 

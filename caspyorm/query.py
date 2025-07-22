@@ -189,48 +189,46 @@ class QuerySet:
         """
         Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados (síncrono).
         """
-        # Se a query já foi executada, podemos simplesmente retornar o tamanho do cache.
         if self._result_cache is not None:
             return len(self._result_cache)
-
-        # Se não, construímos e executamos a query COUNT(*) otimizada.
-        cql, params = query_builder.build_count_cql(
-            self.model_cls.__caspy_schema__,
-            filters=self._filters,
-            allow_filtering=self._allow_filtering
-        )
-        
-        session = get_session()
-        prepared = session.prepare(cql)
-        result_set = session.execute(prepared, params)
-        
-        # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
-        row = result_set.one()
-        return row.count if row else 0
+        try:
+            cql, params = query_builder.build_count_cql(
+                self.model_cls.__caspy_schema__,
+                filters=self._filters,
+                allow_filtering=self._allow_filtering
+            )
+            session = get_session()
+            prepared = session.prepare(cql)
+            result_set = session.execute(prepared, params)
+            row = result_set.one()
+            return row.count if row else 0
+        except Exception as e:
+            if 'ALLOW FILTERING' in str(e) and not self._allow_filtering:
+                return self.allow_filtering().count()
+            raise
 
     async def count_async(self) -> int:
         """
         Executa uma query `SELECT COUNT(*)` otimizada e retorna o número de resultados (assíncrono).
         """
-        # Se a query já foi executada, podemos simplesmente retornar o tamanho do cache.
         if self._result_cache is not None:
             return len(self._result_cache)
-
-        # Se não, construímos e executamos a query COUNT(*) otimizada.
-        cql, params = query_builder.build_count_cql(
-            self.model_cls.__caspy_schema__,
-            filters=self._filters,
-            allow_filtering=self._allow_filtering
-        )
-        
-        session = get_async_session()
-        prepared = session.prepare(cql)
-        future = session.execute_async(prepared, params)
-        result_set = await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=self._timeout)
-        
-        # O resultado de COUNT(*) é uma única linha com uma coluna chamada 'count'.
-        row = result_set.one()
-        return row.count if row else 0
+        try:
+            cql, params = query_builder.build_count_cql(
+                self.model_cls.__caspy_schema__,
+                filters=self._filters,
+                allow_filtering=self._allow_filtering
+            )
+            session = get_async_session()
+            prepared = session.prepare(cql)
+            future = session.execute_async(prepared, params)
+            result_set = await asyncio.wait_for(_wait_for_cassandra_future(future), timeout=self._timeout)
+            row = result_set.one()
+            return row.count if row else 0
+        except Exception as e:
+            if 'ALLOW FILTERING' in str(e) and not self._allow_filtering:
+                return await self.allow_filtering().count_async()
+            raise
 
     def exists(self) -> bool:
         """
@@ -371,87 +369,74 @@ class QuerySet:
     def page(self, page_size: int = 100, paging_state: Any = None):
         """
         Retorna uma página de resultados e o paging_state para a próxima página (síncrono).
-        Args:
-            page_size: Tamanho da página (quantidade de registros)
-            paging_state: Estado de paginação retornado pela página anterior (ou None para a primeira página)
-        Returns:
-            (resultados: List[Model], next_paging_state: Any)
         """
-        cql, params = query_builder.build_select_cql(
-            self.model_cls.__caspy_schema__,
-            columns=None,  # Seleciona todas as colunas
-            filters=self._filters,
-            limit=None,  # Não usar LIMIT para paginação real
-            ordering=self._ordering,
-            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
-        )
-        session = get_session()
-        
-        # CORRIGIDO: Usar PreparedStatement para suporte a parâmetros
-        prepared = session.prepare(cql)
-        statement = prepared.bind(params)
-        statement.fetch_size = page_size
-        
-        # CORRIGIDO: Aplicar paging_state se fornecido
-        if paging_state is not None:
-            result_set = session.execute(statement, paging_state=paging_state)
-        else:
-            result_set = session.execute(statement)
-        
-        # CORREÇÃO: Limitar manualmente os resultados ao page_size
-        resultados = []
-        count = 0
-        for row in result_set:
-            if count >= page_size:
-                break
-            resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
-            count += 1
-            
-        next_paging_state = result_set.paging_state
-        return resultados, next_paging_state
+        try:
+            cql, params = query_builder.build_select_cql(
+                self.model_cls.__caspy_schema__,
+                columns=None,  # Seleciona todas as colunas
+                filters=self._filters,
+                limit=None,  # Não usar LIMIT para paginação real
+                ordering=self._ordering,
+                allow_filtering=self._allow_filtering
+            )
+            session = get_session()
+            prepared = session.prepare(cql)
+            statement = prepared.bind(params)
+            statement.fetch_size = page_size
+            if paging_state is not None:
+                result_set = session.execute(statement, paging_state=paging_state)
+            else:
+                result_set = session.execute(statement)
+            resultados = []
+            count = 0
+            for row in result_set:
+                if count >= page_size:
+                    break
+                resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+                count += 1
+            next_paging_state = result_set.paging_state
+            return resultados, next_paging_state
+        except Exception as e:
+            # Se for erro de ALLOW FILTERING, tenta novamente com allow_filtering=True
+            if 'ALLOW FILTERING' in str(e) and not self._allow_filtering:
+                return self.allow_filtering().page(page_size=page_size, paging_state=paging_state)
+            raise
 
     async def page_async(self, page_size: int = 100, paging_state: Any = None):
         """
         Retorna uma página de resultados e o paging_state para a próxima página (assíncrono).
-        Args:
-            page_size: Tamanho da página (quantidade de registros)
-            paging_state: Estado de paginação retornado pela página anterior (ou None para a primeira página)
-        Returns:
-            (resultados: List[Model], next_paging_state: Any)
         """
-        cql, params = query_builder.build_select_cql(
-            self.model_cls.__caspy_schema__,
-            columns=None,  # Seleciona todas as colunas
-            filters=self._filters,
-            limit=None,  # Não usar LIMIT para paginação real
-            ordering=self._ordering,
-            allow_filtering=self._allow_filtering  # NOVO: passar flag ALLOW FILTERING
-        )
-        session = get_async_session()
-        
-        # CORRIGIDO: Usar PreparedStatement para suporte a parâmetros
-        prepared = session.prepare(cql)
-        statement = prepared.bind(params)
-        statement.fetch_size = page_size
-        
-        # CORRIGIDO: Aplicar paging_state se fornecido
-        if paging_state is not None:
-            future = session.execute_async(statement, paging_state=paging_state)
-        else:
-            future = session.execute_async(statement)
-        result_set = await _wait_for_cassandra_future(future)
-        
-        # CORREÇÃO: Limitar manualmente os resultados ao page_size
-        resultados = []
-        count = 0
-        for row in result_set:
-            if count >= page_size:
-                break
-            resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
-            count += 1
-            
-        next_paging_state = result_set.paging_state
-        return resultados, next_paging_state
+        try:
+            cql, params = query_builder.build_select_cql(
+                self.model_cls.__caspy_schema__,
+                columns=None,  # Seleciona todas as colunas
+                filters=self._filters,
+                limit=None,  # Não usar LIMIT para paginação real
+                ordering=self._ordering,
+                allow_filtering=self._allow_filtering
+            )
+            session = get_async_session()
+            prepared = session.prepare(cql)
+            statement = prepared.bind(params)
+            statement.fetch_size = page_size
+            if paging_state is not None:
+                future = session.execute_async(statement, paging_state=paging_state)
+            else:
+                future = session.execute_async(statement)
+            result_set = await _wait_for_cassandra_future(future)
+            resultados = []
+            count = 0
+            for row in result_set:
+                if count >= page_size:
+                    break
+                resultados.append(_map_row_to_instance(self.model_cls, row._asdict()))
+                count += 1
+            next_paging_state = result_set.paging_state
+            return resultados, next_paging_state
+        except Exception as e:
+            if 'ALLOW FILTERING' in str(e) and not self._allow_filtering:
+                return await self.allow_filtering().page_async(page_size=page_size, paging_state=paging_state)
+            raise
 
     def bulk_create(self, instances: List["Model"]) -> List["Model"]:
         """
@@ -500,48 +485,43 @@ class QuerySet:
     async def bulk_create_async(self, instances: List["Model"]) -> List["Model"]:
         """
         Lógica interna para inserir instâncias em lote (assíncrono).
+        Aceita tanto instâncias de Model quanto dicionários (converte dicionários em Model).
         """
         if not instances:
             return []
-        
+        # Converter dicionários em instâncias do modelo, se necessário
+        model_instances = []
+        for item in instances:
+            if isinstance(item, self.model_cls):
+                model_instances.append(item)
+            elif isinstance(item, dict):
+                model_instances.append(self.model_cls(**item))
+            else:
+                raise TypeError(f"bulk_create_async aceita apenas instâncias de Model ou dicionários, recebido: {type(item)}")
         session = get_async_session()
         table_name = self.model_cls.__table_name__
-        
-        # Pega a query de inserção e os nomes das colunas uma única vez
-        data_sample = instances[0].model_dump()
+        data_sample = model_instances[0].model_dump()
         columns = list(data_sample.keys())
         placeholders = ", ".join(['?'] * len(columns))
         insert_query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
-        
         prepared_statement = session.prepare(insert_query)
-        
-        # Usar UNLOGGED BATCH para performance
         batch = BatchStatement(consistency_level=ConsistencyLevel.QUORUM)
-        
-        for instance in instances:
-            # Validação crucial: garantir que as chaves primárias não são nulas
+        for instance in model_instances:
             for pk_name in self.model_cls.__caspy_schema__['primary_keys']:
                 if getattr(instance, pk_name, None) is None:
-                    # Alternativamente, poderíamos gerar o UUID aqui se for o caso
                     raise ValueError(f"Primary key '{pk_name}' não pode ser nula em bulk_create_async. Instância: {instance}")
-            
             data = instance.model_dump()
-            params = [data.get(col) for col in columns]  # Garante a ordem correta
+            params = [data.get(col) for col in columns]
             batch.add(prepared_statement, params)
-            
-            # Limite prático para o tamanho do batch para evitar timeouts
             if len(batch) >= 100:
                 future = session.execute_async(batch)
                 await _wait_for_cassandra_future(future)
                 batch.clear()
-
-        # Executa o batch final com os registros restantes
         if len(batch) > 0:
             future = session.execute_async(batch)
             await _wait_for_cassandra_future(future)
-            
-        logger.info(f"{len(instances)} instâncias inseridas em lote na tabela '{table_name}' (ASSÍNCRONO).")
-        return instances
+        logger.info(f"{len(model_instances)} instâncias inseridas em lote na tabela '{table_name}' (ASSÍNCRONO).")
+        return model_instances
 
 # --- Funções do módulo que interagem com o QuerySet ---
 

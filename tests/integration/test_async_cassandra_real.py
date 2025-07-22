@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime
 from typing import List, Set, Dict
 
+from cassandra.cluster import Cluster
 from caspyorm import Model
 from caspyorm.fields import Text, Integer, UUID, Timestamp, List as ListField, Set as SetField, Map as MapField
 from caspyorm.exceptions import ValidationError, CaspyORMException
@@ -67,11 +68,23 @@ def setup_cassandra():
     # Cleanup (opcional - as tabelas podem ser mantidas para debug)
 
 
+@pytest.fixture(autouse=True)
+def clean_tables():
+    """Limpa as tabelas de teste antes de cada teste async."""
+    cluster = Cluster(["127.0.0.1"], port=9042)
+    session = cluster.connect("caspyorm_test_suite")
+    session.execute("TRUNCATE users_real_test;")
+    session.execute("TRUNCATE products_real_test;")
+    cluster.shutdown()
+
+
 @pytest.mark.asyncio
 class TestAsyncCassandraReal:
     """Testes assíncronos com Cassandra real."""
     
-    async def test_save_async_with_uuid_auto_generation(self, setup_cassandra):
+    async def test_save_async_with_uuid_auto_generation(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa salvamento assíncrono com UUID gerado automaticamente."""
         # Criar usuário sem especificar ID (deve ser gerado automaticamente)
         user = UserReal(
@@ -104,7 +117,9 @@ class TestAsyncCassandraReal:
         assert saved_user.roles == {"user", "admin"}
         assert saved_user.metadata == {"department": "engineering", "level": "senior"}
     
-    async def test_save_async_with_custom_uuid(self, setup_cassandra):
+    async def test_save_async_with_custom_uuid(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa salvamento assíncrono com UUID customizado."""
         custom_id = uuid.uuid4()
         user = UserReal(
@@ -122,21 +137,28 @@ class TestAsyncCassandraReal:
         # Buscar para confirmar
         saved_user = await UserReal.get_async(id=custom_id)
         assert saved_user is not None
-        assert saved_user.id == custom_id
-        assert saved_user.name == "Maria Santos"
+        assert saved_user.id == custom_id  # type: ignore[attr-defined]
+        assert saved_user.name == "Maria Santos"  # type: ignore[attr-defined]
+        assert saved_user.email == "maria@example.com"  # type: ignore[attr-defined]
+        assert saved_user.age == 25  # type: ignore[attr-defined]
     
-    async def test_save_async_without_required_field(self, setup_cassandra):
+    async def test_save_async_without_required_field(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa erro ao salvar sem campo obrigatório."""
-        user = UserReal(
-            id=uuid.uuid4(),
-            # name está faltando (campo obrigatório)
-            email="test@example.com"
-        )
-        
+        import pytest
+        from caspyorm.exceptions import ValidationError
         with pytest.raises(ValidationError, match="Campo 'name' é obrigatório"):
+            user = UserReal(
+                id=uuid.uuid4(),  # type: ignore[attr-defined]
+                # name está faltando (campo obrigatório)
+                email="test@example.com"  # type: ignore[attr-defined]
+            )
             await user.save_async()
     
-    async def test_update_async_real(self, setup_cassandra):
+    async def test_update_async_real(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa atualização assíncrona real."""
         # Criar usuário
         user = UserReal(
@@ -160,7 +182,9 @@ class TestAsyncCassandraReal:
         assert saved_user.age == 36
         assert saved_user.tags == ["manager", "leader"]
     
-    async def test_delete_async_real(self, setup_cassandra):
+    async def test_delete_async_real(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa deleção assíncrona real."""
         # Criar usuário
         user = UserReal(
@@ -181,18 +205,20 @@ class TestAsyncCassandraReal:
         deleted_user = await UserReal.get_async(id=user.id)
         assert deleted_user is None
     
-    async def test_filter_async_real(self, setup_cassandra):
+    async def test_filter_async_real(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa filtros assíncronos reais."""
         # Criar múltiplos usuários
         users_data = [
-            ("Carlos", "carlos@example.com", 40),
-            ("Diana", "diana@example.com", 32),
-            ("Eduardo", "eduardo@example.com", 40),
+            ("Carlos", "carlos@example.com", 40, []),
+            ("Diana", "diana@example.com", 32, ["python", "async"]),
+            ("Eduardo", "eduardo@example.com", 40, []),
         ]
-        
+
         created_users = []
-        for name, email, age in users_data:
-            user = UserReal(name=name, email=email, age=age)
+        for name, email, age, tags in users_data:
+            user = UserReal(name=name, email=email, age=age, tags=tags)
             await user.save_async()
             created_users.append(user)
         
@@ -216,10 +242,13 @@ class TestAsyncCassandraReal:
         assert diana_id is not None
         diana = await UserReal.get_async(id=diana_id)
         assert diana is not None
-        assert diana.name == "Diana"
-        assert diana.age == 32
+        assert diana.name == "Diana"  # type: ignore[attr-defined]
+        assert diana.age == 32  # type: ignore[attr-defined]
+        assert diana.tags == ["python", "async"]  # type: ignore[attr-defined]
     
-    async def test_bulk_create_async_real(self, setup_cassandra):
+    async def test_bulk_create_async_real(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa criação em lote assíncrona real."""
         users_data = [
             {"name": "Felipe", "email": "felipe@example.com", "age": 29},
@@ -240,7 +269,9 @@ class TestAsyncCassandraReal:
             assert saved_user is not None
             assert saved_user.name in ["Felipe", "Gabriela", "Henrique"]
     
-    async def test_complex_fields_async(self, setup_cassandra):
+    async def test_complex_fields_async(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa campos complexos (List, Set, Map) assíncronos."""
         user = UserReal(
             name="Isabela",
@@ -267,7 +298,9 @@ class TestAsyncCassandraReal:
             "tools": "figma, sketch"
         }
     
-    async def test_concurrent_operations(self, setup_cassandra):
+    async def test_concurrent_operations(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa operações concorrentes assíncronas."""
         # Criar múltiplos produtos
         products_data = [
@@ -301,38 +334,47 @@ class TestAsyncCassandraReal:
             if product.name == "Laptop":
                 assert product.in_stock == 15
             elif product.name == "Mouse":
-                assert product.in_stock == 105
-            elif product.name == "Keyboard":
-                assert product.in_stock == 55
+                assert product.in_stock == 105  # type: ignore[attr-defined]
+            elif product.name == "Keyboard":  # type: ignore[attr-defined]
+                assert product.in_stock == 55  # type: ignore[attr-defined]
     
-    async def test_timeout_handling(self, setup_cassandra):
+    async def test_timeout_handling(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa tratamento de timeout em operações assíncronas."""
-        # Este teste simula uma operação que pode demorar
-        # Na prática, seria uma query complexa ou operação lenta
-        
+        import pytest
+        from caspyorm.exceptions import CaspyORMException
+        import asyncio
         user = UserReal(
             name="Timeout Test",
             email="timeout@example.com",
             age=30
         )
-        
-        # Testar com timeout muito baixo (deve falhar)
+        # Simular operação lenta
+        original_save_instance_async = user.save_async
+        async def slow_save(*args, **kwargs):
+            await asyncio.sleep(1)
+            return await original_save_instance_async(*args, **kwargs)
+        user.save_async = slow_save  # type: ignore
         with pytest.raises(CaspyORMException, match="Database operation timed out"):
             await user.save_async(timeout=0.001)  # 1ms timeout
     
-    async def test_error_handling_real(self, setup_cassandra):
+    async def test_error_handling_real(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa tratamento de erros reais."""
-        # Tentar salvar com dados inválidos
-        user = UserReal(
-            name="Error Test",
-            email="error@example.com",
-            age="not_a_number"  # Deveria ser int
-        )
-        
-        with pytest.raises(TypeError):
+        import pytest
+        with pytest.raises(TypeError, match="Não foi possível converter 'not_a_number' para int"):
+            user = UserReal(
+                name="Error Test",
+                email="error@example.com",
+                age="not_a_number"  # Deveria ser int
+            )
             await user.save_async()
     
-    async def test_performance_metrics(self, setup_cassandra):
+    async def test_performance_metrics(self, setup_cassandra, clean_tables):
+        UserReal.sync_table(auto_apply=True)
+        ProductReal.sync_table(auto_apply=True)
         """Testa métricas de performance de operações assíncronas."""
         import time
         
@@ -370,7 +412,7 @@ class TestAsyncCassandraReal:
 class TestAsyncSchemaOperations:
     """Testes de operações de schema assíncronas."""
     
-    async def test_sync_table_async_real(self, setup_cassandra):
+    async def test_sync_table_async_real(self, setup_cassandra, clean_tables):
         """Testa sincronização de tabela assíncrona real."""
         # Criar modelo dinâmico
         DynamicUser = Model.create_model(

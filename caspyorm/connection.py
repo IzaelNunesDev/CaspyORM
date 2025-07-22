@@ -22,90 +22,89 @@ class ConnectionManager:
         self._is_async_connected = False  # Flag para conexão assíncrona
     
     def connect(
-        self, 
-        contact_points: List[str] = ['127.0.0.1'],
+        self,
+        keyspace: str,
+        contact_points: Optional[List[str]] = None,
         port: int = 9042,
-        keyspace: Optional[str] = None,
+        secure_connect_bundle: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        ssl_options: Optional[Dict[str, Any]] = None,
         **kwargs: Any
     ) -> None:
         """
         Conecta ao cluster Cassandra (síncrono).
-        
-        Args:
-            contact_points: Lista de endereços dos nós do cluster
-            port: Porta do Cassandra (padrão: 9042)
-            keyspace: Keyspace para usar
-            username: Usuário para autenticação (opcional)
-            password: Senha para autenticação (opcional)
         """
         try:
-            # Configurar autenticação se fornecida
-            auth_provider = None
+            if self.cluster:
+                return
+
+            if secure_connect_bundle:
+                if contact_points:
+                    logger.warning("Both 'secure_connect_bundle' and 'contact_points' provided. Ignoring 'contact_points'.")
+                cluster_kwargs = {"cloud": {"secure_connect_bundle": secure_connect_bundle}}
+            elif contact_points:
+                cluster_kwargs = {"contact_points": contact_points, "port": port}
+            else:
+                raise ValueError("You must provide either 'contact_points' or 'secure_connect_bundle'.")
+
             if username and password:
                 auth_provider = PlainTextAuthProvider(username=username, password=password)
+                cluster_kwargs['auth_provider'] = auth_provider
+
+            if ssl_options:
+                cluster_kwargs['ssl_options'] = ssl_options
             
-            # Criar cluster
-            self.cluster = Cluster(
-                contact_points=contact_points,
-                port=port,
-                auth_provider=auth_provider,
-                **kwargs
-            )
-            
-            # Conectar e obter sessão
-            self.session = self.cluster.connect()
+            self.cluster = Cluster(**cluster_kwargs, **kwargs)
+            self.session = self.cluster.connect(keyspace)
             self._is_connected = True
-    
-            # Usar keyspace se especificado
-            if keyspace:
-                self.use_keyspace(keyspace)
+            self.keyspace = keyspace
             
-            logger.info(f"Conectado ao Cassandra (SÍNCRONO) em {contact_points}:{port}")
+            log_target = secure_connect_bundle if secure_connect_bundle else f"{contact_points}:{port}"
+            logger.info(f"Conectado ao Cassandra (SÍNCRONO) em {log_target}")
             
         except Exception as e:
             logger.error(f"Erro ao conectar ao Cassandra: {e}")
             raise
 
     async def connect_async(
-        self, 
-        contact_points: List[str] = ['127.0.0.1'],
+        self,
+        keyspace: str,
+        contact_points: Optional[List[str]] = None,
         port: int = 9042,
-        keyspace: Optional[str] = None,
+        secure_connect_bundle: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        ssl_options: Optional[Dict[str, Any]] = None,
         **kwargs: Any
     ) -> None:
         """
         Conecta ao cluster Cassandra (assíncrono).
-        
-        Args:
-            contact_points: Lista de endereços dos nós do cluster
-            port: Porta do Cassandra (padrão: 9042)
-            keyspace: Keyspace para usar
-            username: Usuário para autenticação (opcional)
-            password: Senha para autenticação (opcional)
         """
         try:
-            # Configurar autenticação se fornecida
-            auth_provider = None
+            if self.async_session:
+                 return
+
+            if secure_connect_bundle:
+                if contact_points:
+                    logger.warning("Both 'secure_connect_bundle' and 'contact_points' provided. Ignoring 'contact_points'.")
+                cluster_kwargs = {"cloud": {"secure_connect_bundle": secure_connect_bundle}}
+            elif contact_points:
+                cluster_kwargs = {"contact_points": contact_points, "port": port}
+            else:
+                raise ValueError("You must provide either 'contact_points' or 'secure_connect_bundle'.")
+
             if username and password:
                 auth_provider = PlainTextAuthProvider(username=username, password=password)
+                cluster_kwargs['auth_provider'] = auth_provider
+
+            if ssl_options:
+                cluster_kwargs['ssl_options'] = ssl_options
             
-            # Criar cluster
-            self.cluster = Cluster(
-                contact_points=contact_points,
-                port=port,
-                auth_provider=auth_provider,
-                **kwargs
-            )
-            
-            # Conectar e obter sessão (usar a mesma sessão para operações assíncronas)
+            self.cluster = Cluster(**cluster_kwargs, **kwargs)
             self.async_session = self.cluster.connect()
             self._is_async_connected = True
             
-            # Usar keyspace se especificado
             if keyspace:
                 self.use_keyspace_async(keyspace)
             
@@ -121,18 +120,13 @@ class ConnectionManager:
             raise RuntimeError("Não há conexão ativa com o Cassandra")
         
         try:
-            # Criar keyspace se não existir
             self.session.execute(f"""
                 CREATE KEYSPACE IF NOT EXISTS {keyspace}
                 WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
             """)
-            
-            # Usar o keyspace
             self.session.set_keyspace(keyspace)
             self.keyspace = keyspace
-            
             logger.info(f"Usando keyspace (SÍNCRONO): {keyspace}")
-            
         except Exception as e:
             logger.error(f"Erro ao usar keyspace {keyspace}: {e}")
             raise
@@ -143,24 +137,17 @@ class ConnectionManager:
             raise RuntimeError("Não há conexão assíncrona ativa com o Cassandra")
         
         try:
-            # Criar keyspace se não existir
             self.async_session.execute(f"""
                 CREATE KEYSPACE IF NOT EXISTS {keyspace}
                 WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
             """)
-            
-            # Usar o keyspace
             self.async_session.set_keyspace(keyspace)
             self.keyspace = keyspace
-            
             logger.info(f"Usando keyspace (ASSÍNCRONO): {keyspace}")
-            
         except Exception as e:
             logger.error(f"Erro ao usar keyspace {keyspace} (async): {e}")
             raise
 
-
-    
     def execute(self, query: str, parameters: Optional[Any] = None):
         """Executa uma query CQL (síncrono)."""
         if not self.session:
@@ -197,14 +184,11 @@ class ConnectionManager:
         if self.session:
             self.session.shutdown()
             self.session = None
-        
         if self.cluster:
             self.cluster.shutdown()
             self.cluster = None
-        
         self._is_connected = False
         self.keyspace = None
-        
         logger.info("Desconectado do Cassandra (SÍNCRONO)")
 
     async def disconnect_async(self) -> None:
@@ -212,78 +196,52 @@ class ConnectionManager:
         if self.async_session:
             self.async_session.shutdown()
             self.async_session = None
-        
         if self.cluster:
             self.cluster.shutdown()
             self.cluster = None
-        
         self._is_async_connected = False
         self.keyspace = None
-        
         logger.info("Desconectado do Cassandra (ASSÍNCRONO)")
     
     @property
     def is_connected(self) -> bool:
-        """Verifica se há uma conexão ativa (síncrona)."""
         return self._is_connected and self.session is not None
 
     @property
     def is_async_connected(self) -> bool:
-        """Verifica se há uma conexão assíncrona ativa."""
         return self._is_async_connected and self.async_session is not None
     
     def get_cluster(self) -> Optional[Cluster]:
-        """Retorna a instância do cluster ativo."""
         return self.cluster
     
     def get_session(self):
-        """
-        Retorna a sessão ativa do Cassandra (síncrona).
-        Garante que a conexão foi estabelecida.
-        """
         if not self.session or not self._is_connected:
             raise RuntimeError("A conexão com o Cassandra não foi estabelecida. Chame `connection.connect()` primeiro.")
         return self.session
 
     def get_async_session(self):
-        """
-        Retorna a sessão assíncrona ativa do Cassandra.
-        Garante que a conexão assíncrona foi estabelecida.
-        """
         if not self.async_session or not self._is_async_connected:
             raise RuntimeError("A conexão assíncrona com o Cassandra não foi estabelecida. Chame `connection.connect_async()` primeiro.")
         return self.async_session
 
-# Instância global do gerenciador de conexão
 connection = ConnectionManager()
 
-# Funções de conveniência (síncronas)
 def connect(**kwargs):
-    """Conecta ao Cassandra usando a instância global (síncrono)."""
     connection.connect(**kwargs)
 
 def disconnect():
-    """Desconecta do Cassandra usando a instância global (síncrono)."""
     connection.disconnect()
 
 def execute(query: str, parameters: Optional[Any] = None):
-    """Executa uma query usando a instância global (síncrono)."""
     return connection.execute(query, parameters)
 
 def get_cluster() -> Optional[Cluster]:
-    """Retorna a instância do cluster ativo."""
     return connection.get_cluster()
 
 def get_session():
-    """
-    Retorna a sessão ativa do Cassandra (síncrona).
-    Garante que a conexão foi estabelecida.
-    """
     return connection.get_session()
 
-# Funções de conveniência (assíncronas)
 async def connect_async(**kwargs):
-    """Conecta ao Cassandra usando a instância global (assíncrono)."""
     await connection.connect_async(**kwargs)
 
 async def disconnect_async():

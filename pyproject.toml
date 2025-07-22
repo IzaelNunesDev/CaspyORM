@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caspyorm"
-version = "0.1.0"
+version = "2.1.1"
 authors = [
   { name="CaspyORM Team", email="team@caspyorm.dev" },
 ]
@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "cassandra-driver>=3.28.0",
+  "cassandra-driver>=3.25.0,<4.0.0",
   "pydantic>=2.0.0",
   "typing-extensions>=4.0.0",
 ]
