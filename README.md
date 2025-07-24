@@ -1,3 +1,4 @@
+#(A documentação está desatualizada, async emular uma conexão assincrona, há diversas incompatibilidades com o Cassandra mas já ha testes para correção)
 # 🚀 CaspyORM
 
 **Status: 🚀 Beta - Em Desenvolvimento Ativo**
@@ -289,6 +290,9 @@ async def list_users():
 - [x] 129 testes passando
 
 ### 🔄 Em Desenvolvimento
+- [ ] Suporte ao DataStax
+- [ ] Implementar as coleções faltantes
+- [ ] Aprimorar testes para produção
 - [ ] Publicação no PyPI
 - [ ] Documentação interativa
 - [ ] Plugins para IDEs
@@ -300,26 +304,6 @@ async def list_users():
 - [ ] Cache integrado
 - [ ] Métricas avançadas
 
-## 🤝 Contribuindo
-
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
-
-## 🙏 Agradecimentos
-
-- **DataStax** pelo driver Python para Cassandra
-- **Pydantic** pela inspiração na API
-- **FastAPI** pela integração assíncrona
-- **Comunidade Python** pelo feedback e suporte
-
----
 
 **Status**: ✅ **Pronto para Uso em Produção**  
 **Última Atualização**: 19/07/2024  
